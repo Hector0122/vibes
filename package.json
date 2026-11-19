@@ -14,7 +14,8 @@
     "build": "pnpm typecheck && electron-vite build",
     "build:linux": "pnpm build && electron-builder --linux",
     "test": "vitest run",
-    "test:e2e": "pnpm build && node scripts/e2e.mts"
+    "test:e2e": "pnpm build && node scripts/e2e.mts",
+    "test:e2e:dist": "VIBES_APP_BIN=dist/linux-unpacked/vibes node scripts/e2e.mts"
   },
   "devDependencies": {
     "@electron-toolkit/tsconfig": "^2.0.0",
@@ -33,5 +34,6 @@
     "vite": "^7.2.6",
     "vitest": "^4.1.10"
   },
-  "packageManager": "pnpm@12.16.1"
+  "packageManager": "pnpm@12.16.1",
+  "desktopName": "vibes.desktop"
 }

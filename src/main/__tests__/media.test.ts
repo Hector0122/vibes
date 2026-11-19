@@ -3,7 +3,7 @@ import { execFileSync } from 'child_process'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { downloadAudio, eachLimit, remuxToM4a, ytdlpArgs, type Tools } from '../media'
+import { downloadAudio, eachLimit, findTool, remuxToM4a, ytdlpArgs, type Tools } from '../media'
 import { FAILING_ID, makeAudio, makeFakeYtdlp } from './fixtures'
 
 let root: string
@@ -22,6 +22,30 @@ beforeAll(() => {
   tools = { ffmpeg: 'ffmpeg', ytdlp: makeFakeYtdlp(root, join(root, 'source.m4a')) }
 })
 afterAll(() => rmSync(root, { recursive: true, force: true }))
+
+describe('findTool', () => {
+  const only = (...paths: string[]) => (p: string) => paths.includes(p)
+
+  it('uses the override even if PATH has the tool', () => {
+    expect(findTool('yt-dlp', '/opt/y', { PATH: '/usr/bin' }, only('/usr/bin/yt-dlp'))).toBe('/opt/y')
+  })
+
+  it('prefers PATH, in order', () => {
+    const exists = only('/a/yt-dlp', '/b/yt-dlp')
+    expect(findTool('yt-dlp', undefined, { PATH: '/a:/b', HOME: '/h' }, exists)).toBe('/a/yt-dlp')
+  })
+
+  it('finds ~/.local/bin when the desktop launcher left it out of PATH', () => {
+    const exists = only('/h/.local/bin/yt-dlp')
+    expect(findTool('yt-dlp', undefined, { PATH: '/usr/bin', HOME: '/h' }, exists)).toBe(
+      '/h/.local/bin/yt-dlp'
+    )
+  })
+
+  it('falls back to the bare name so the error message names the tool', () => {
+    expect(findTool('yt-dlp', undefined, { PATH: '', HOME: '/h' }, () => false)).toBe('yt-dlp')
+  })
+})
 
 describe('ytdlpArgs', () => {
   it('asks for audio only, as m4a, for exactly that video', () => {

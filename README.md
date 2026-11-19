@@ -31,6 +31,16 @@ adelante, en el celular.
 - `ffmpeg` y `yt-dlp` en el PATH (o en `VIBES_FFMPEG` / `VIBES_YTDLP`)
 - Una cuenta de Cloudflare (el plan gratis alcanza) si quieres la nube
 
+## Instalar (Linux)
+
+```bash
+pnpm build:linux                                  # genera dist/vibes_<versión>_amd64.deb y dist/Vibes-<versión>.AppImage
+sudo apt install ./dist/vibes_0.1.0_amd64.deb     # queda en el menú como "Vibes"
+```
+
+El `.deb` instala `ffmpeg` como dependencia. `yt-dlp` instálalo aparte con `pipx install yt-dlp` (el de apt
+suele estar viejo para YouTube); la app lo encuentra aunque esté en `~/.local/bin`.
+
 ## Desarrollo
 
 ```bash

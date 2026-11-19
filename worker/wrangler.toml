@@ -13,7 +13,7 @@ bucket_name = "vibes"
 [[d1_databases]]
 binding = "DB"
 database_name = "vibes"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "ecc5b4e3-829a-4fee-8e85-9b2de2760a85"
 migrations_dir = "migrations"
 
 # Secrets (wrangler secret put <NAME>), never in this file:

@@ -4,6 +4,7 @@
 //   import → songs listed → download missing → play → seek → next →
 //   restart keeps the library → upload without cloud settings shows the error.
 // Run with: pnpm test:e2e   (needs a display; CI wraps it in xvfb-run)
+// VIBES_APP_BIN=dist/linux-unpacked/vibes runs the same flow on the packaged app.
 import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -12,7 +13,10 @@ import { join } from 'node:path'
 import assert from 'node:assert/strict'
 import { makeAudio, makeEsoundDir, makeFakeYtdlp } from '../src/main/__tests__/fixtures.ts'
 
-const electron = createRequire(import.meta.url)('electron') as unknown as string
+const appBin = process.env.VIBES_APP_BIN
+const [cmd, baseArgs] = appBin
+  ? [appBin, []]
+  : [createRequire(import.meta.url)('electron') as unknown as string, ['.']]
 const root = mkdtempSync(join(tmpdir(), 'vibes-e2e-'))
 const esoundDir = makeEsoundDir(root)
 makeAudio(join(root, 'dl.m4a'))
@@ -29,7 +33,7 @@ interface App {
 }
 
 async function launch(): Promise<App> {
-  const proc = spawn(electron, ['.', '--remote-debugging-port=0', '--no-sandbox'], { env, stdio: ['ignore', 'ignore', 'pipe'] })
+  const proc = spawn(cmd, [...baseArgs, '--remote-debugging-port=0', '--no-sandbox'], { env, stdio: ['ignore', 'ignore', 'pipe'] })
   const port = await new Promise<string>((resolve, reject) => {
     let err = ''
     proc.stderr!.on('data', (d) => {

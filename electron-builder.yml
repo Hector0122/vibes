@@ -1,0 +1,21 @@
+# Desktop installers. `pnpm build:linux` → dist/Vibes-<version>.AppImage and dist/vibes_<version>_amd64.deb
+appId: dev.vibes.app
+productName: Vibes
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**
+  - package.json
+linux:
+  target: [deb, AppImage]
+  category: AudioVideo
+  icon: build/icon.png
+  synopsis: Tu música sin anuncios
+  maintainer: Hector Paramo
+  syncDesktopName: true
+  artifactName: ${productName}-${version}.${ext}
+deb:
+  # yt-dlp is not listed: the apt version is too old for YouTube; install it with pip/pipx.
+  depends: [ffmpeg]
+  artifactName: ${name}_${version}_${arch}.${ext}

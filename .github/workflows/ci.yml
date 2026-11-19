@@ -22,10 +22,13 @@ jobs:
             worker/pnpm-lock.yaml
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg xvfb
 
+      # Root deps first: the Worker imports src/shared/api.ts, and compiling it reads the root
+      # tsconfig.json, which extends @electron-toolkit/tsconfig (a root dependency).
+      - run: pnpm install --frozen-lockfile
+
       - name: Worker
         working-directory: worker
         run: pnpm install --frozen-lockfile && pnpm typecheck && pnpm test
 
-      - run: pnpm install --frozen-lockfile
       - run: pnpm test
       - run: xvfb-run -a pnpm test:e2e

@@ -4,7 +4,8 @@
 import { spawn } from 'child_process'
 import { existsSync } from 'fs'
 import { rename, rm } from 'fs/promises'
-import { join } from 'path'
+import { homedir } from 'os'
+import { delimiter, join } from 'path'
 import { YOUTUBE_ID_RE } from '../shared/api'
 
 export interface Tools {
@@ -12,9 +13,34 @@ export interface Tools {
   ytdlp: string
 }
 
+/**
+ * Where a tool lives: the override env var, then PATH, then the usual install
+ * folders. Opened from the desktop menu, the app often gets a PATH without
+ * ~/.local/bin (where `pip install --user yt-dlp` puts it). Falls back to the
+ * bare name so the "not found" error still names the tool.
+ */
+export function findTool(
+  name: string,
+  override: string | undefined,
+  env: Record<string, string | undefined> = process.env,
+  exists: (p: string) => boolean = existsSync
+): string {
+  if (override) return override
+  const home = env.HOME || homedir()
+  const dirs = [
+    ...(env.PATH ?? '').split(delimiter).filter(Boolean),
+    join(home, '.local/bin'),
+    join(home, 'bin'),
+    '/usr/local/bin',
+    '/usr/bin',
+    '/snap/bin'
+  ]
+  return dirs.map((d) => join(d, name)).find(exists) ?? name
+}
+
 export const defaultTools = (): Tools => ({
-  ffmpeg: process.env.VIBES_FFMPEG || 'ffmpeg',
-  ytdlp: process.env.VIBES_YTDLP || 'yt-dlp'
+  ffmpeg: findTool('ffmpeg', process.env.VIBES_FFMPEG),
+  ytdlp: findTool('yt-dlp', process.env.VIBES_YTDLP)
 })
 
 function run(cmd: string, args: string[], timeoutMs: number): Promise<void> {
