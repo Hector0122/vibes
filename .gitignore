@@ -1,0 +1,17 @@
+node_modules/
+out/
+dist/
+*.tsbuildinfo
+.DS_Store
+*.log
+
+# Your music and library never go to git
+/esound_library.*
+*.m4a
+*.mp4
+
+# Cloudflare Worker local state / secrets
+worker/.wrangler/
+worker/.dev.vars
+.env
+.env.*

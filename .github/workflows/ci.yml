@@ -1,0 +1,31 @@
+# Runs every test level on each push and PR: Worker integration tests,
+# desktop unit/integration tests and the E2E flow against the built app.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4 # version comes from package.json "packageManager"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            worker/pnpm-lock.yaml
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg xvfb
+
+      - name: Worker
+        working-directory: worker
+        run: pnpm install --frozen-lockfile && pnpm typecheck && pnpm test
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: xvfb-run -a pnpm test:e2e

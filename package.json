@@ -1,0 +1,37 @@
+{
+  "name": "vibes",
+  "version": "0.1.0",
+  "description": "Tu música sin anuncios: importa eSound, descarga con yt-dlp y guarda tu biblioteca en tu propio Cloudflare",
+  "main": "./out/main/index.js",
+  "author": "Hector Paramo",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "start": "electron-vite preview",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
+    "typecheck": "pnpm typecheck:node && pnpm typecheck:web",
+    "build": "pnpm typecheck && electron-vite build",
+    "build:linux": "pnpm build && electron-builder --linux",
+    "test": "vitest run",
+    "test:e2e": "pnpm build && node scripts/e2e.mts"
+  },
+  "devDependencies": {
+    "@electron-toolkit/tsconfig": "^2.0.0",
+    "@tailwindcss/vite": "^4.3.0",
+    "@types/node": "^22.19.1",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "electron": "^39.2.6",
+    "electron-builder": "^26.0.12",
+    "electron-vite": "^5.0.0",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
+    "tailwindcss": "^4.3.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.6",
+    "vitest": "^4.1.10"
+  },
+  "packageManager": "pnpm@12.16.1"
+}

@@ -1,0 +1,23 @@
+# Vibes personal cloud backend. Setup: see README.md.
+name = "vibes-cloud"
+main = "src/index.ts"
+compatibility_date = "2025-10-01"
+
+[vars]
+R2_BUCKET_NAME = "vibes"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "vibes"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "vibes"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+# Secrets (wrangler secret put <NAME>), never in this file:
+#   API_TOKEN             your personal bearer token
+#   R2_ACCOUNT_ID         Cloudflare account id (for the S3 endpoint)
+#   R2_ACCESS_KEY_ID      R2 API token access key (Object Read & Write on "vibes")
+#   R2_SECRET_ACCESS_KEY  R2 API token secret
