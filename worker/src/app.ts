@@ -8,6 +8,7 @@ import {
   YOUTUBE_ID_RE,
   pickMeta,
   validateMeta,
+  REQUEST_ID_RE,
   validateHit,
   validateRecommendations,
   validatePlaylists,
@@ -31,7 +32,7 @@ import {
 import { isAuthorized } from './auth'
 import type { Env } from './env'
 import type { Presigner } from './presign'
-import { searchYoutube, YoutubeError } from './youtube'
+import { DeezerError, searchDeezer } from './deezer'
 
 interface RequestRow {
   id: string
@@ -39,6 +40,7 @@ interface RequestRow {
   artists: string
   duration_sec: number | null
   cover_url: string | null
+  deezer_id: string | null
   status: 'pending' | 'failed'
   error: string | null
   created_at: number
@@ -50,6 +52,7 @@ const toRequest = (r: RequestRow): SongRequest => ({
   artists: r.artists,
   durationSec: r.duration_sec,
   coverUrl: r.cover_url,
+  deezerId: r.deezer_id,
   status: r.status,
   error: r.error,
   createdAt: r.created_at
@@ -117,7 +120,7 @@ export interface App {
 }
 
 export interface AppOptions {
-  /** For calls to YouTube (tests pass a fake). */
+  /** For calls to Deezer (tests pass a fake). */
   fetch?: typeof fetch
 }
 
@@ -226,33 +229,37 @@ export function createApp(presign: Presigner, opts: AppOptions = {}): App {
   async function search(env: Env, url: URL): Promise<SearchResponse> {
     const q = (url.searchParams.get('q') ?? '').trim()
     if (!q || q.length > MAX_QUERY) fail(400, 'Escribe qué buscar')
-    if (!env.YOUTUBE_API_KEY) {
-      fail(501, 'Falta la API key de YouTube en tu nube: wrangler secret put YOUTUBE_API_KEY')
-    }
     let hits: SearchHit[]
     try {
-      hits = await searchYoutube(env.YOUTUBE_API_KEY!, q, opts.fetch ?? fetch)
+      hits = await searchDeezer(q, opts.fetch ?? fetch)
     } catch (e) {
-      if (e instanceof YoutubeError) fail(e.status, e.message)
+      if (e instanceof DeezerError) fail(e.status, e.message)
       throw e
     }
     return { results: await flag(env, hits) }
   }
 
-  /** Adds whether each hit is already in the cloud, or already marked. */
+  /** Adds whether each hit is already in the cloud, or already marked (by id or by Deezer id). */
   async function flag(env: Env, hits: SearchHit[]): Promise<SearchResponse['results']> {
     if (hits.length === 0) return []
-    const marks = hits.map(() => '?').join(',')
     const ids = hits.map((h) => h.id)
-    const inCloud = await env.DB.prepare(`SELECT id FROM songs WHERE status = 'complete' AND id IN (${marks})`)
-      .bind(...ids)
-      .all<{ id: string }>()
-    const requested = await env.DB.prepare(`SELECT id FROM requests WHERE id IN (${marks})`)
-      .bind(...ids)
-      .all<{ id: string }>()
-    const c = new Set(inCloud.results.map((r) => r.id))
-    const r = new Set(requested.results.map((x) => x.id))
-    return hits.map((h) => ({ ...h, inCloud: c.has(h.id), requested: r.has(h.id) }))
+    const dz = hits.map((h) => h.deezerId).filter((d): d is string => !!d)
+    const q = (n: number): string => Array(Math.max(n, 1)).fill('?').join(',')
+    const none = dz.length ? dz : ['']
+    const inCloud = await env.DB.prepare(
+      `SELECT id, json_extract(meta, '$.deezerId') AS dz FROM songs
+       WHERE status = 'complete' AND (id IN (${q(ids.length)}) OR json_extract(meta, '$.deezerId') IN (${q(none.length)}))`
+    )
+      .bind(...ids, ...none)
+      .all<{ id: string; dz: string | null }>()
+    const requested = await env.DB.prepare(
+      `SELECT id, deezer_id AS dz FROM requests WHERE id IN (${q(ids.length)}) OR deezer_id IN (${q(none.length)})`
+    )
+      .bind(...ids, ...none)
+      .all<{ id: string; dz: string | null }>()
+    const has = (rows: { id: string; dz: string | null }[], h: SearchHit): boolean =>
+      rows.some((r) => r.id === h.id || (!!h.deezerId && r.dz === h.deezerId))
+    return hits.map((h) => ({ ...h, inCloud: has(inCloud.results, h), requested: has(requested.results, h) }))
   }
 
   async function getRecommendations(env: Env): Promise<RecommendationsResponse> {
@@ -278,7 +285,8 @@ export function createApp(presign: Presigner, opts: AppOptions = {}): App {
         title: h.title.trim(),
         artists: h.artists,
         durationSec: h.durationSec,
-        coverUrl: h.coverUrl
+        coverUrl: h.coverUrl,
+        deezerId: h.deezerId ?? null
       }))
     }
     await env.DB.prepare(
@@ -291,7 +299,7 @@ export function createApp(presign: Presigner, opts: AppOptions = {}): App {
 
   async function listRequests(env: Env): Promise<ListRequestsResponse> {
     const { results } = await env.DB.prepare(
-      'SELECT id, title, artists, duration_sec, cover_url, status, error, created_at FROM requests ORDER BY created_at'
+      'SELECT id, title, artists, duration_sec, cover_url, deezer_id, status, error, created_at FROM requests ORDER BY created_at'
     ).all<RequestRow>()
     return { requests: results.map(toRequest) }
   }
@@ -301,21 +309,21 @@ export function createApp(presign: Presigner, opts: AppOptions = {}): App {
     const hit = await readJson<SearchHit>(request)
     const invalid = validateHit(hit)
     if (invalid) fail(400, invalid)
-    const song = await getSong(env, hit.id)
-    if (song?.status === 'complete') fail(409, 'Ya está en tu nube')
+    const [flagged] = await flag(env, [hit])
+    if (flagged.inCloud) fail(409, 'Ya está en tu nube')
     const count = await env.DB.prepare('SELECT COUNT(*) AS n FROM requests').first<{ n: number }>()
     const exists = await env.DB.prepare('SELECT id FROM requests WHERE id = ?').bind(hit.id).first()
     if (!exists && (count?.n ?? 0) >= MAX_REQUESTS) fail(429, 'Tienes demasiadas canciones pendientes')
     const now = Date.now()
     await env.DB.prepare(
-      `INSERT INTO requests (id, title, artists, duration_sec, cover_url, status, error, created_at)
-       VALUES (?, ?, ?, ?, ?, 'pending', NULL, ?)
+      `INSERT INTO requests (id, title, artists, duration_sec, cover_url, deezer_id, status, error, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'pending', NULL, ?)
        ON CONFLICT(id) DO UPDATE SET status = 'pending', error = NULL`
     )
-      .bind(hit.id, hit.title.trim(), hit.artists, hit.durationSec, hit.coverUrl, now)
+      .bind(hit.id, hit.title.trim(), hit.artists, hit.durationSec ?? null, hit.coverUrl ?? null, hit.deezerId ?? null, now)
       .run()
     const row = await env.DB.prepare(
-      'SELECT id, title, artists, duration_sec, cover_url, status, error, created_at FROM requests WHERE id = ?'
+      'SELECT id, title, artists, duration_sec, cover_url, deezer_id, status, error, created_at FROM requests WHERE id = ?'
     )
       .bind(hit.id)
       .first<RequestRow>()
@@ -354,7 +362,7 @@ export function createApp(presign: Presigner, opts: AppOptions = {}): App {
 
     const rq = /^\/requests\/([^/]+)(\/fail)?$/.exec(path)
     if (rq) {
-      if (!YOUTUBE_ID_RE.test(rq[1])) fail(400, 'Invalid song id')
+      if (!REQUEST_ID_RE.test(rq[1])) fail(400, 'Invalid song id')
       if (!rq[2] && method === 'DELETE') return json(await deleteRequest(env, rq[1]))
       if (rq[2] && method === 'POST') return json(await failRequest(env, rq[1], request))
       return fail(405, 'Method not allowed')

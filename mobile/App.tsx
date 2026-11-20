@@ -162,6 +162,7 @@ export default function App(): React.JSX.Element {
             void refresh() // songs the computer already brought in
           }}
           onRequested={(r) => setRequests((list) => [...list.filter((x) => x.id !== r.id), r])}
+          onPreviewStart={player.pause}
         />
       ) : (
         <LibraryScreen

@@ -10,6 +10,7 @@ const req = (id: string, status: SongRequest['status'] = 'pending'): SongRequest
   artists: 'x',
   durationSec: null,
   coverUrl: null,
+  deezerId: null,
   status,
   error: null,
   createdAt: 0

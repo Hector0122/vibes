@@ -22,6 +22,8 @@ export interface Player {
   shuffle: boolean
   play: (id: string) => Promise<void>
   toggle: () => void
+  /** Pauses if playing (e.g. while a preview clip plays). */
+  pause: () => void
   next: () => void
   prev: () => void
   seek: (t: number) => void
@@ -50,9 +52,11 @@ export function usePlayer(
   useEffect(() => {
     // Keep playing with the screen off / app in the background, and own the audio focus
     // (needed for the lock-screen controls).
-    setAudioModeAsync({ playsInSilentMode: true, shouldPlayInBackground: true, interruptionMode: 'doNotMix' }).catch(
-      () => {}
-    )
+    setAudioModeAsync({
+      playsInSilentMode: true,
+      shouldPlayInBackground: true,
+      interruptionMode: 'doNotMix'
+    }).catch(() => {})
   }, [])
 
   const load = useCallback(
@@ -158,6 +162,11 @@ export function usePlayer(
     shuffle,
     play,
     toggle,
+    pause: () => {
+      if (!status.playing) return
+      player.pause()
+      pausedAt.current = Date.now()
+    },
     next,
     prev,
     seek: (t) => void player.seekTo(t),

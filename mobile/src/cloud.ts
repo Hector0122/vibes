@@ -1,6 +1,6 @@
 // The phone's client for your Worker (contract: ../../src/shared/api.ts).
 // Health, songs, playlists, a signed URL to stream (or download) one; and
-// searching YouTube + marking songs for the computer to download.
+// searching (Deezer) + marking songs for the computer to download.
 // No React Native imports, so it is tested against the real Worker with Vitest.
 import {
   API_PREFIX,
@@ -120,7 +120,8 @@ export function createCloud(opts: {
         title: hit.title,
         artists: hit.artists,
         durationSec: hit.durationSec,
-        coverUrl: hit.coverUrl
+        coverUrl: hit.coverUrl,
+        deezerId: hit.deezerId ?? null
       }),
     cancelRequest: (id) =>
       call<unknown>(`/requests/${encodeURIComponent(id)}`, 'DELETE').then(() => undefined),

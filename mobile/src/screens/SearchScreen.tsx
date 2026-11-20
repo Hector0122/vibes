@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons'
+import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio'
 import { useEffect, useState } from 'react'
 import {
   ActivityIndicator,
@@ -21,16 +22,67 @@ interface Props {
   onClose: () => void
   /** A song was marked: the library shows it under "Esperando a la compu". */
   onRequested: (r: SongRequest) => void
+  /** A preview clip starts: pause the music. */
+  onPreviewStart?: () => void
 }
 
-/** Search YouTube and mark songs; the computer downloads them next time Vibes is open there. */
-export function SearchScreen({ cloud, onClose, onRequested }: Props): React.JSX.Element {
+/**
+ * Search (Deezer) with 30-second previews, or pick from the computer's suggestions, and mark
+ * songs; the computer finds them on YouTube and downloads them next time Vibes is open there.
+ */
+export function SearchScreen({
+  cloud,
+  onClose,
+  onRequested,
+  onPreviewStart
+}: Props): React.JSX.Element {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Result[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [adding, setAdding] = useState<string | null>(null)
   const [recs, setRecs] = useState<RecommendationsResponse | null>(null)
+
+  // 30-second clips, on their own player so the music's queue is left alone.
+  const clip = useAudioPlayer(null)
+  const clipStatus = useAudioPlayerStatus(clip)
+  const [previewing, setPreviewing] = useState<string | null>(null)
+  const [finding, setFinding] = useState<string | null>(null)
+  useEffect(() => {
+    if (clipStatus.didJustFinish) setPreviewing(null)
+  }, [clipStatus.didJustFinish])
+
+  async function togglePreview(r: Result): Promise<void> {
+    if (previewing === r.id) {
+      clip.pause()
+      setPreviewing(null)
+      return
+    }
+    setError(null)
+    let url = r.previewUrl
+    if (url === undefined) {
+      // A suggestion from the computer (a YouTube video): find its clip on Deezer.
+      setFinding(r.id)
+      try {
+        const found = await cloud.search(`${r.artists} ${r.title}`)
+        url = found.find((x) => x.previewUrl)?.previewUrl ?? null
+      } catch (e) {
+        setError((e as Error).message)
+        return
+      } finally {
+        setFinding(null)
+      }
+    }
+    if (!url) {
+      setError('Esta canción no tiene vista previa')
+      return
+    }
+    onPreviewStart?.()
+    await setAudioModeAsync({ playsInSilentMode: true }).catch(() => {})
+    clip.replace({ uri: url })
+    clip.play()
+    setPreviewing(r.id)
+  }
 
   // Until you search: the suggestions the computer prepared.
   useEffect(() => {
@@ -88,7 +140,7 @@ export function SearchScreen({ cloud, onClose, onRequested }: Props): React.JSX.
             }}
             onSubmitEditing={search}
             returnKeyType="search"
-            placeholder="Canción o artista en YouTube"
+            placeholder="Canción, artista o álbum"
             placeholderTextColor={colors.faint}
             autoCorrect={false}
             autoFocus
@@ -139,8 +191,28 @@ export function SearchScreen({ cloud, onClose, onRequested }: Props): React.JSX.
                 <Ionicons name="musical-note" size={18} color={colors.faint} />
               </View>
             )}
+            {r.previewUrl !== null &&
+              (finding === r.id ? (
+                <ActivityIndicator size="small" color={colors.pink} style={styles.play} />
+              ) : (
+                <Pressable
+                  accessibilityLabel={`${previewing === r.id ? 'Detener' : 'Escuchar'}: ${r.title}`}
+                  onPress={() => void togglePreview(r)}
+                  hitSlop={8}
+                  style={styles.play}
+                >
+                  <Ionicons
+                    name={previewing === r.id ? 'stop-circle' : 'play-circle'}
+                    size={30}
+                    color={previewing === r.id ? colors.pink : colors.text}
+                  />
+                </Pressable>
+              ))}
             <View style={styles.text}>
-              <Text numberOfLines={1} style={styles.songTitle}>
+              <Text
+                numberOfLines={1}
+                style={[styles.songTitle, previewing === r.id && { color: colors.pinkSoft }]}
+              >
                 {r.title}
               </Text>
               <Text numberOfLines={1} style={styles.artist}>
@@ -206,7 +278,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 8
   },
-  cover: { width: 64, height: 48, borderRadius: 8, backgroundColor: '#27272a' },
+  cover: { width: 48, height: 48, borderRadius: 8, backgroundColor: '#27272a' },
+  play: { width: 30, alignItems: 'center' },
   coverEmpty: { alignItems: 'center', justifyContent: 'center' },
   text: { flex: 1, minWidth: 0 },
   songTitle: { color: colors.text, fontSize: 15, fontWeight: '500' },

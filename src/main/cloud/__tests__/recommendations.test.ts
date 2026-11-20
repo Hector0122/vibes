@@ -11,7 +11,7 @@ describe('toCloudRecommendations', () => {
         { id: 'bbbbbbbbbbb', title: 'x'.repeat(400), artists: 'y', durationSec: null, coverUrl: '' }
       ]
     })
-    expect(out.results[0]).toEqual({ id: 'aaaaaaaaaaa', title: 'Feel Good Inc.', artists: 'Gorillaz', durationSec: 222, coverUrl: 'https://i/1.jpg' })
+    expect(out.results[0]).toEqual({ id: 'aaaaaaaaaaa', title: 'Feel Good Inc.', artists: 'Gorillaz', durationSec: 222, coverUrl: 'https://i/1.jpg', deezerId: null })
     expect(out.results[1].coverUrl).toBeNull()
     expect(validateRecommendations(out)).toBeNull()
   })

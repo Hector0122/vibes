@@ -24,7 +24,7 @@ import {
   uploadAll,
   type TaskContext
 } from './tasks'
-import { radioFor, recommend, searchYoutube, streamResolver } from './youtube'
+import { findOnYoutube, radioFor, recommend, searchYoutube, streamResolver } from './youtube'
 
 // Tests point these at fixtures; normal runs use the real locations.
 if (process.env.VIBES_USER_DATA) app.setPath('userData', process.env.VIBES_USER_DATA)
@@ -170,7 +170,18 @@ async function main(): Promise<void> {
     const active = await settings.active()
     if (!active) return
     const client = new CloudClient({ baseUrl: active.url, token: active.token, retries: 1 })
-    const run = await processRequests(client, (r) => add({ ...r, coverUrl: r.coverUrl as string })) // a null cover stays null
+    const run = await processRequests(client, async (r) => {
+      // Marked from a YouTube suggestion: its id is the video. Found on Deezer: look for it on YouTube.
+      const video = YOUTUBE_ID_RE.test(r.id) ? null : await findOnYoutube(ctx.tools, r)
+      return add({
+        id: video?.id ?? r.id,
+        title: r.title,
+        artists: r.artists,
+        durationSec: video?.durationSec ?? r.durationSec,
+        coverUrl: r.coverUrl as string, // a null cover stays null
+        deezerId: r.deezerId
+      })
+    })
     if (run.done || run.failed) console.log(`Canciones del celular: ${run.done} agregadas, ${run.failed} con error`)
   })
   const checkRequestsQuietly = (): void => void checkRequests().catch(() => {}) // offline: next time

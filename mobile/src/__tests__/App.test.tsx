@@ -68,17 +68,23 @@ function fakeWorker(): void {
     if (url.endsWith('/v1/songs')) return json({ songs: [...SONGS] })
     if (url.endsWith('/v1/playlists')) return json({ playlists: PLAYLISTS })
     if (url.includes('/v1/search?q=')) {
-      const hit = (id: string, title: string) => ({
+      const hit = (id: string, title: string, previewUrl: string | null) => ({
         id,
         title,
         artists: 'Soda Stereo',
         durationSec: 250,
-        coverUrl: null
+        coverUrl: null,
+        deezerId: id.slice(2),
+        previewUrl
       })
       return json({
         results: [
-          { ...hit('ddddddddddd', 'De Música Ligera'), inCloud: false, requested: false },
-          { ...hit('aaaaaaaaaaa', 'Afuera'), inCloud: true, requested: false }
+          {
+            ...hit('dz111', 'De Música Ligera', 'https://cdn.deezer.test/111.mp3'),
+            inCloud: false,
+            requested: false
+          },
+          { ...hit('dz222', 'Afuera', null), inCloud: true, requested: false }
         ]
       })
     }
@@ -379,18 +385,24 @@ describe('with the cloud set up', () => {
     }
   })
 
-  it('search YouTube and mark a song: it waits for the computer; cancel it', async () => {
+  it('search (Deezer), listen to the 30-second clip, mark a song: it waits for the computer; cancel it', async () => {
     await render(<App />)
     await fireEvent.press(await screen.findByLabelText('Agregar música'))
     await fireEvent.changeText(screen.getByTestId('yt-search'), 'soda stereo')
     await fireEvent(screen.getByTestId('yt-search'), 'submitEditing')
-    expect(await screen.findByTestId('result-ddddddddddd')).toBeTruthy()
+    expect(await screen.findByTestId('result-dz111')).toBeTruthy()
     expect(requests.at(-1)).toBe('https://w.example.dev/v1/search?q=soda%20stereo')
     expect(screen.getByText('En tu nube')).toBeTruthy() // Afuera is already there: no button
+    expect(screen.queryByLabelText('Escuchar: Afuera')).toBeNull() // no clip for it
+
+    await fireEvent.press(screen.getByLabelText('Escuchar: De Música Ligera'))
+    expect(audio.mockPlayer.sources).toEqual(['https://cdn.deezer.test/111.mp3'])
+    await fireEvent.press(await screen.findByLabelText('Detener: De Música Ligera'))
+    expect(audio.mockPlayer.pause).toHaveBeenCalled()
 
     await fireEvent.press(screen.getByLabelText('Agregar: De Música Ligera'))
     expect(await screen.findByText('Pendiente')).toBeTruthy()
-    expect(REQUESTS.map((r) => r.id)).toEqual(['ddddddddddd'])
+    expect(REQUESTS).toMatchObject([{ id: 'dz111', deezerId: '111' }])
 
     await fireEvent.press(screen.getByLabelText('Volver'))
     expect(await screen.findByText('Esperando a la compu (1)')).toBeTruthy()
@@ -439,11 +451,18 @@ describe('with the cloud set up', () => {
     )
   })
 
-  it('suggestions from the computer show before searching, and can be marked', async () => {
+  it('suggestions from the computer show before searching, can be previewed (clip found on Deezer) and marked', async () => {
     await render(<App />)
     await fireEvent.press(await screen.findByLabelText('Agregar música'))
     expect(await screen.findByText('Recomendado para ti')).toBeTruthy()
     expect(screen.getByText('Por escuchar Afuera')).toBeTruthy()
+    await fireEvent.press(screen.getByLabelText('Escuchar: La Célula Que Explota'))
+    await waitFor(() =>
+      expect(audio.mockPlayer.sources).toEqual(['https://cdn.deezer.test/111.mp3'])
+    )
+    expect(requests.at(-1)).toBe(
+      'https://w.example.dev/v1/search?q=Caifanes%20La%20C%C3%A9lula%20Que%20Explota'
+    )
     await fireEvent.press(screen.getByLabelText('Agregar: La Célula Que Explota'))
     expect(await screen.findByText('Pendiente')).toBeTruthy()
     expect(REQUESTS.map((r) => r.id)).toEqual(['fffffffffff'])

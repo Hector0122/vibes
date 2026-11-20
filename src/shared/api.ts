@@ -130,19 +130,27 @@ export function validatePlaylists(body: unknown): string | null {
   return null
 }
 
-// Adding songs from the phone. The phone searches through the Worker (which
-// holds the YouTube Data API key) and marks songs; the desktop app, when open,
-// downloads the marked songs with yt-dlp, uploads them and clears the mark.
+// Adding songs from the phone. The phone searches Deezer through the Worker
+// (no API key; 30-second previews) and marks songs; the desktop app, when open,
+// finds each marked song on YouTube with yt-dlp, downloads and uploads it, and
+// clears the mark. Recommendations (from the desktop) are marked by YouTube id.
 
 export const MAX_QUERY = 200
 export const MAX_REQUESTS = 500
+/** A marked song: its YouTube id, or "dz" + its Deezer id (found on YouTube later). */
+export const REQUEST_ID_RE = /^(?:[A-Za-z0-9_-]{11}|dz\d{1,20})$/
+export const deezerRequestId = (deezerId: string | number): string => `dz${deezerId}`
 
 export interface SearchHit {
+  /** YouTube id, or "dz" + Deezer id. */
   id: string
   title: string
   artists: string
   durationSec: number | null
   coverUrl: string | null
+  deezerId: string | null
+  /** A 30-second clip (Deezer), when there is one. Not stored. */
+  previewUrl?: string | null
 }
 
 export interface SearchResponse {
@@ -165,12 +173,13 @@ export interface ListRequestsResponse {
 export function validateHit(h: unknown): string | null {
   if (!h || typeof h !== 'object') return 'Invalid song'
   const x = h as Record<string, unknown>
-  if (typeof x.id !== 'string' || !YOUTUBE_ID_RE.test(x.id)) return 'Invalid song id'
+  if (typeof x.id !== 'string' || !REQUEST_ID_RE.test(x.id)) return 'Invalid song id'
   if (typeof x.title !== 'string' || !x.title.trim() || x.title.length > 300) return 'Invalid title'
   if (typeof x.artists !== 'string' || x.artists.length > 500) return 'Invalid artists'
-  if (x.coverUrl !== null && (typeof x.coverUrl !== 'string' || x.coverUrl.length > 1000)) return 'Invalid coverUrl'
+  if (x.coverUrl != null && (typeof x.coverUrl !== 'string' || x.coverUrl.length > 1000)) return 'Invalid coverUrl'
+  if (x.deezerId != null && (typeof x.deezerId !== 'string' || !/^\d{1,20}$/.test(x.deezerId))) return 'Invalid deezerId'
   const d = x.durationSec
-  if (d !== null && (typeof d !== 'number' || !Number.isFinite(d) || d < 0)) return 'Invalid durationSec'
+  if (d != null && (typeof d !== 'number' || !Number.isFinite(d) || d < 0)) return 'Invalid durationSec'
   return null
 }
 

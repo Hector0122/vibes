@@ -11,7 +11,8 @@ export function toCloudRecommendations(r: Recommendations): PutRecommendationsRe
       title: s.title.slice(0, 300),
       artists: s.artists.slice(0, 500),
       durationSec: typeof s.durationSec === 'number' && s.durationSec >= 0 ? s.durationSec : null,
-      coverUrl: s.coverUrl || null
+      coverUrl: s.coverUrl || null,
+      deezerId: s.deezerId ?? null
     }))
   }
 }
