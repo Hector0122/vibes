@@ -12,6 +12,7 @@ import { CloudError, createCloud, type Cloud } from './src/cloud'
 import { ActionSheet, type Action } from './src/components/ActionSheet'
 import { NameDialog } from './src/components/NameDialog'
 import { PlayerBar } from './src/components/PlayerBar'
+import { TabBar, type Tab } from './src/components/TabBar'
 import {
   DEFAULT_PREFS,
   loadPrefs,
@@ -22,7 +23,14 @@ import {
 } from './src/offline'
 import { onWifi } from './src/network'
 import { flushPlays } from './src/plays'
-import { LibraryScreen, type DownloadState } from './src/screens/LibraryScreen'
+import { HomeScreen } from './src/screens/HomeScreen'
+import {
+  groupArtists,
+  LibraryScreen,
+  mainArtist,
+  type DownloadState,
+  type Section
+} from './src/screens/LibraryScreen'
 import { NowPlayingScreen } from './src/screens/NowPlayingScreen'
 import { SearchScreen } from './src/screens/SearchScreen'
 import { SettingsScreen } from './src/screens/SettingsScreen'
@@ -48,7 +56,10 @@ export default function App(): React.JSX.Element {
   const [playlistId, setPlaylistId] = useState<string | null>(null)
   const [onlyDownloaded, setOnlyDownloaded] = useState(false)
   const [requests, setRequests] = useState<SongRequest[]>([])
-  const [searching, setSearching] = useState(false)
+  const [tab, setTab] = useState<Tab>('home')
+  /** Biblioteca: Canciones / Artistas / Playlists, and the open artist. */
+  const [section, setSection] = useState<Section>('songs')
+  const [artist, setArtist] = useState<string | null>(null)
   const [nowOpen, setNowOpen] = useState(false)
   /** Open menus / dialogs: a song's menu, the playlist's menu, a name prompt. */
   const [sheet, setSheet] = useState<{
@@ -193,9 +204,40 @@ export default function App(): React.JSX.Element {
   const shown = useMemo(() => {
     const base = selected
       ? selected.songIds.map((id) => byId.get(id)).filter((s): s is CloudSong => !!s)
-      : songs
+      : artist
+        ? songs.filter((s) => mainArtist(s) === artist)
+        : songs
     return offline || onlyDownloaded ? base.filter((s) => localUri(s.id)) : base
-  }, [selected, byId, songs, offline, onlyDownloaded, localUri])
+  }, [selected, artist, byId, songs, offline, onlyDownloaded, localUri])
+  // Offline, only what's on the phone counts.
+  const available = useMemo(
+    () => (offline ? songs.filter((s) => localUri(s.id)) : songs),
+    [offline, songs, localUri]
+  )
+  const artists = useMemo(() => groupArtists(available), [available])
+  const playlistCards = useMemo(
+    () =>
+      playlists.map((p) => {
+        const its = p.songIds.map((id) => byId.get(id)).filter((s): s is CloudSong => !!s)
+        return {
+          id: p.id,
+          name: p.name,
+          count: its.length,
+          covers: its.slice(0, 8).map((s) => s.coverUrl)
+        }
+      }),
+    [playlists, byId]
+  )
+  const openPlaylist = (id: string | null): void => {
+    setArtist(null)
+    setPlaylistId(id)
+    setTab('library')
+  }
+  const openArtist = (name: string | null): void => {
+    setPlaylistId(null)
+    setArtist(name)
+    setTab('library')
+  }
 
   const downloadState = (s: CloudSong): DownloadState =>
     downloads.downloadingId === s.id
@@ -281,12 +323,36 @@ export default function App(): React.JSX.Element {
     setSheet({ title: s.title, subtitle: s.artists, actions })
   }
 
+  /** "Mantener descargada" (a playlist) and "Descargar solo con Wi-Fi", as checks in a menu. */
+  const downloadSettings = (keepId?: string): Action[] => [
+    ...(keepId
+      ? [
+          {
+            label: 'Mantener descargada',
+            checked: prefs.keep.includes(keepId),
+            onPress: () =>
+              updatePrefs({
+                keep: prefs.keep.includes(keepId)
+                  ? prefs.keep.filter((x) => x !== keepId)
+                  : [...prefs.keep, keepId]
+              })
+          }
+        ]
+      : []),
+    {
+      label: 'Descargar solo con Wi-Fi',
+      checked: prefs.wifiOnly,
+      onPress: () => updatePrefs({ wifiOnly: !prefs.wifiOnly })
+    }
+  ]
+
   const playlistMenu = (): void => {
     const pl = selected
     if (!pl) return
     setSheet({
       title: pl.name,
       actions: [
+        ...downloadSettings(pl.id),
         {
           label: 'Renombrar',
           onPress: () =>
@@ -310,6 +376,7 @@ export default function App(): React.JSX.Element {
                   style: 'destructive',
                   onPress: () => {
                     setPlaylistId(null)
+                    setSection('playlists')
                     void editPlaylists([{ type: 'delete', id: pl.id }])
                   }
                 }
@@ -344,66 +411,92 @@ export default function App(): React.JSX.Element {
       <StatusBar style="light" />
       {nowOpen && player.current ? (
         <NowPlayingScreen player={player} onClose={() => setNowOpen(false)} />
-      ) : searching && cloud ? (
+      ) : tab === 'search' && cloud ? (
         <SearchScreen
           cloud={cloud}
           onClose={() => {
-            setSearching(false)
+            setTab('library')
             void refresh() // songs the computer already brought in
           }}
           onRequested={(r) => setRequests((list) => [...list.filter((x) => x.id !== r.id), r])}
           onPreviewStart={player.pause}
         />
+      ) : tab === 'home' ? (
+        <HomeScreen
+          cloud={offline ? null : cloud}
+          playlists={playlistCards}
+          artists={artists}
+          downloadedCount={downloads.count}
+          error={error ?? downloads.error}
+          loading={loading}
+          onRefresh={refresh}
+          onOpenPlaylist={openPlaylist}
+          onOpenArtist={openArtist}
+          onOpenDownloaded={() => {
+            openPlaylist(null)
+            setSection('songs')
+            setOnlyDownloaded(true)
+          }}
+          onOpenSearch={() => setTab('search')}
+          onOpenSettings={() => setEditing(true)}
+        />
       ) : (
         <LibraryScreen
           songs={shown}
           total={songs.length}
-          title={selected?.name ?? 'Tu música'}
+          title={selected?.name ?? artist ?? 'Biblioteca'}
           loading={loading}
           error={error ?? downloads.error}
           offline={offline}
           onRefresh={refresh}
           currentId={player.current?.id ?? null}
           onPlay={(id) => void player.play(id)}
+          onPlayAll={(visible) => {
+            player.setShuffle(false)
+            if (visible[0]) void player.play(visible[0].id)
+          }}
           onShuffleAll={(visible) => {
             player.setShuffle(true)
             const pick = visible[Math.floor(Math.random() * visible.length)]
             if (pick) void player.play(pick.id)
           }}
-          onOpenSettings={() => setEditing(true)}
           onVisibleChange={setQueue}
-          playlists={playlists.map((p) => ({ id: p.id, name: p.name, count: p.songIds.length }))}
+          section={section}
+          onSection={setSection}
+          playlists={playlistCards}
           playlistId={selected?.id ?? null}
-          onSelectPlaylist={setPlaylistId}
+          onSelectPlaylist={openPlaylist}
+          artists={artists}
+          artist={artist}
+          onSelectArtist={openArtist}
+          onBack={() => {
+            setPlaylistId(null)
+            setArtist(null)
+          }}
           downloadedCount={downloads.count}
           onlyDownloaded={onlyDownloaded}
           onToggleOnlyDownloaded={() => setOnlyDownloaded((v) => !v)}
           downloadState={downloadState}
           onDownload={(list) => void downloadAsked(list)}
           keepDownloaded={!!selected && prefs.keep.includes(selected.id)}
-          onToggleKeep={() =>
-            selected &&
-            updatePrefs({
-              keep: prefs.keep.includes(selected.id)
-                ? prefs.keep.filter((x) => x !== selected.id)
-                : [...prefs.keep, selected.id]
-            })
-          }
-          wifiOnly={prefs.wifiOnly}
-          onToggleWifiOnly={() => updatePrefs({ wifiOnly: !prefs.wifiOnly })}
           onRemoveDownload={(s) => downloads.remove([s.id])}
           progress={downloads.progress}
           onCancelDownloads={downloads.cancel}
-          onOpenSearch={() => setSearching(true)}
+          onOpenSearch={() => setTab('search')}
           onSongMenu={songMenu}
           onNewPlaylist={() => askNewPlaylist()}
-          onPlaylistMenu={playlistMenu}
+          onMenu={
+            selected
+              ? playlistMenu
+              : () => setSheet({ title: 'Descargas', actions: downloadSettings() })
+          }
           requests={requests}
           onCancelRequest={(r) => void cancelRequest(r)}
           onRetryRequest={(r) => void retryRequest(r)}
         />
       )}
       <PlayerBar player={player} onOpen={() => setNowOpen(true)} />
+      {!(nowOpen && player.current) && <TabBar tab={tab} onChange={setTab} />}
       <ActionSheet
         visible={!!sheet}
         title={sheet?.title ?? ''}

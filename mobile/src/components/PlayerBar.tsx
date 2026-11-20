@@ -85,7 +85,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#15131c',
     borderTopColor: colors.border,
     borderTopWidth: 1,
-    paddingBottom: 24
+    paddingBottom: 10
   },
   track: { height: 3, backgroundColor: 'rgba(255,255,255,0.12)' },
   fill: { height: 3, backgroundColor: colors.pinkSoft },
