@@ -76,11 +76,6 @@ una versión, no en cada push ni en los PR: corre las pruebas localmente antes (
 
 ### Pendiente / siguiente
 
-- **⚠️ Actualizar la nube (en la laptop):** la 1.1 y la 1.2 traen cambios en el Worker (tablas nuevas:
-  migraciones 0002–0006). Desde `worker/`: `git pull` y luego `pnpm migrate:remote && pnpm deploy` (misma
-  sesión de `wrangler login`; la URL y el token de la app no cambian). Hasta entonces el celular funciona,
-  pero sin playlists, "Agregar música", sugerencias, conteo de reproducciones ni edición de playlists.
-  Opcional: conectar el repo en Cloudflare (Worker → Settings → Build) para que se despliegue solo.
 - **Probar la 1.2 en un teléfono real** antes de publicarla: el reproductor nativo (pantalla apagada,
   ⏮ ⏭ en la pantalla bloqueada) y el widget dependen de Android y no se pueden probar aquí (las pruebas
   automáticas y el empaquetado sí pasan). APK de prueba: Actions → CI → Run workflow en la rama, y bajar
@@ -131,7 +126,7 @@ pnpm migrate:remote
 ```
 
 > **Al actualizar:** cuando cambie algo en `worker/`, desde esa carpeta corre `git pull` y luego
-> `pnpm migrate:remote && pnpm deploy` (aplica las tablas nuevas y sube el código nuevo).
+> `pnpm migrate:remote && pnpm run deploy` (aplica las tablas nuevas y sube el código nuevo).
 
 Crea un token de R2 en el dashboard de Cloudflare → R2 → *Manage API tokens* → **Object Read &
 Write** solo para el bucket `vibes`. Luego guarda los secretos (nunca van en el repo):
@@ -142,7 +137,7 @@ pnpm exec wrangler secret put API_TOKEN
 pnpm exec wrangler secret put R2_ACCOUNT_ID
 pnpm exec wrangler secret put R2_ACCESS_KEY_ID
 pnpm exec wrangler secret put R2_SECRET_ACCESS_KEY
-pnpm deploy
+pnpm run deploy
 ```
 
 En la app, botón **Nube**: pega la URL del Worker y tu token, prueba la conexión y guarda. El token se
