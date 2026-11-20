@@ -38,6 +38,9 @@
     "testPathIgnorePatterns": [
       "/node_modules/",
       "\\.int\\.test\\.ts$"
+    ],
+    "modulePaths": [
+      "<rootDir>/node_modules"
     ]
   }
 }

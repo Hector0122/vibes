@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CloudSong } from '../../src/shared/api'
 import type { Cloud } from './cloud'
+import { getLyrics } from './lyrics'
 import * as store from './offline'
 
 export interface DownloadProgress {
@@ -73,6 +74,7 @@ export function useOffline(cloud: Cloud | null): Offline {
           if (!c) throw new Error('Configura la nube primero')
           await store.downloadSong(await c.streamUrl(song.id), song)
           await commit({ ...index.current, [song.id]: song.sha256 })
+          void getLyrics(song).catch(() => {}) // so the lyrics are there without internet too
           setProgress((p) => p && { ...p, done: p.done + 1 })
         } catch (e) {
           setError((e as Error).message)

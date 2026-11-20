@@ -3,6 +3,7 @@
 // title; among those, the closest duration wins and live albums lose.
 // VIBES_DEEZER_URL points tests at a fake server.
 import type { SongMeta } from '../shared/api'
+import { fold } from '../shared/fold'
 
 export interface DeezerTrack {
   id: number
@@ -15,14 +16,7 @@ export interface DeezerTrack {
 
 export type Enrichment = Pick<SongMeta, 'coverUrl' | 'album' | 'deezerId' | 'deezerArtistId'>
 
-export const fold = (s: string): string =>
-  s
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/\([^)]*\)|\[[^\]]*\]/g, ' ') // "(feat. X)", "[Remastered]"
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
+export { fold }
 
 const words = (s: string): string => ` ${fold(s)} `
 

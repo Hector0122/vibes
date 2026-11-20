@@ -14,6 +14,7 @@ import {
 } from './src/offline'
 import { onWifi } from './src/network'
 import { LibraryScreen, type DownloadState } from './src/screens/LibraryScreen'
+import { NowPlayingScreen } from './src/screens/NowPlayingScreen'
 import { SearchScreen } from './src/screens/SearchScreen'
 import { SettingsScreen } from './src/screens/SettingsScreen'
 import { loadSettings, saveSettings, type CloudSettings } from './src/settings'
@@ -38,6 +39,7 @@ export default function App(): React.JSX.Element {
   const [onlyDownloaded, setOnlyDownloaded] = useState(false)
   const [requests, setRequests] = useState<SongRequest[]>([])
   const [searching, setSearching] = useState(false)
+  const [nowOpen, setNowOpen] = useState(false)
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS)
 
   const cloud: Cloud | null = useMemo(() => {
@@ -226,7 +228,9 @@ export default function App(): React.JSX.Element {
   return (
     <View style={styles.root}>
       <StatusBar style="light" />
-      {searching && cloud ? (
+      {nowOpen && player.current ? (
+        <NowPlayingScreen player={player} onClose={() => setNowOpen(false)} />
+      ) : searching && cloud ? (
         <SearchScreen
           cloud={cloud}
           onClose={() => {
@@ -282,7 +286,7 @@ export default function App(): React.JSX.Element {
           onRetryRequest={(r) => void retryRequest(r)}
         />
       )}
-      <PlayerBar player={player} />
+      <PlayerBar player={player} onOpen={() => setNowOpen(true)} />
     </View>
   )
 }

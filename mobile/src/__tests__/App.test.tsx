@@ -61,6 +61,15 @@ let REQUESTS: Req[] = []
 function fakeWorker(): void {
   globalThis.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
+    if (url.startsWith('https://lrclib.net/')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => [
+          { trackName: 'Afuera', artistName: 'Caifanes', duration: 200, syncedLyrics: '[00:01.00] Primera\n[00:10.00] Segunda línea', plainLyrics: 'Primera\nSegunda línea' }
+        ]
+      } as Response
+    }
     if (url.startsWith('https://api.github.com/'))
       return { ok: false, status: 404, json: async () => ({}) } as Response
     requests.push(url)
@@ -204,6 +213,19 @@ describe('with the cloud set up', () => {
     )
     await waitFor(() => expect(audio.mockPlaylist.uris.at(-1)).toContain('aaaaaaaaaaa')) // the list wraps around
     expect(audio.mockPlaylist.uris).toHaveLength(3) // before, playing, after
+  })
+
+  it('tap the player: the song big, with synced lyrics that follow the music (saved for offline)', async () => {
+    await render(<App />)
+    await fireEvent.press(await screen.findByTestId('song-aaaaaaaaaaa'))
+    await waitFor(() => expect(nowPlaying()).toBe('Afuera'))
+    await fireEvent.press(screen.getByLabelText('Abrir lo que suena'))
+    expect(await screen.findByText('Segunda línea')).toBeTruthy()
+    await act(() => audio.mockPlaylistStatus({ currentTime: 12 }))
+    await waitFor(() => expect(screen.getByTestId('lyric-now')).toHaveTextContent('Segunda línea'))
+    expect(fs.mockDisk.has('file:///docs/vibes/lyrics/aaaaaaaaaaa.json')).toBe(true)
+    await fireEvent.press(screen.getByLabelText('Cerrar'))
+    expect(await screen.findByTestId('song-bbbbbbbbbbb')).toBeTruthy()
   })
 
   it('lock screen ⏭ and ⏮ (the native list moves; the app follows)', async () => {

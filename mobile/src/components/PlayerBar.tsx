@@ -5,7 +5,13 @@ import type { Player } from '../usePlayer'
 import { SleepTimer } from './SleepTimer'
 
 /** The bar at the bottom: what's playing, progress, and the controls. */
-export function PlayerBar({ player }: { player: Player }): React.JSX.Element | null {
+export function PlayerBar({
+  player,
+  onOpen
+}: {
+  player: Player
+  onOpen?: () => void
+}): React.JSX.Element | null {
   const s = player.current
   if (!s) return null
   const pct = player.duration > 0 ? Math.min(1, player.time / player.duration) : 0
@@ -23,14 +29,17 @@ export function PlayerBar({ player }: { player: Player }): React.JSX.Element | n
             <Ionicons name="musical-note" size={18} color={colors.faint} />
           </View>
         )}
-        <View style={styles.text}>
+        <Pressable style={styles.text} onPress={onOpen} accessibilityLabel="Abrir lo que suena">
           <Text testID="now-playing" numberOfLines={1} style={styles.title}>
             {s.title}
           </Text>
-          <Text numberOfLines={1} style={[styles.artist, player.error ? { color: colors.red } : null]}>
+          <Text
+            numberOfLines={1}
+            style={[styles.artist, player.error ? { color: colors.red } : null]}
+          >
             {player.error ?? s.artists}
           </Text>
-        </View>
+        </Pressable>
         <SleepTimer player={player} />
         <Pressable
           accessibilityLabel="Aleatorio"
@@ -38,7 +47,11 @@ export function PlayerBar({ player }: { player: Player }): React.JSX.Element | n
           hitSlop={8}
           onPress={() => player.setShuffle(!player.shuffle)}
         >
-          <Ionicons name="shuffle" size={22} color={player.shuffle ? colors.pinkSoft : colors.muted} />
+          <Ionicons
+            name="shuffle"
+            size={22}
+            color={player.shuffle ? colors.pinkSoft : colors.muted}
+          />
         </Pressable>
         <Pressable accessibilityLabel="Anterior" hitSlop={8} onPress={player.prev}>
           <Ionicons name="play-skip-back" size={22} color={colors.text} />
@@ -51,7 +64,12 @@ export function PlayerBar({ player }: { player: Player }): React.JSX.Element | n
           {player.loading ? (
             <ActivityIndicator color="#000" />
           ) : (
-            <Ionicons name={player.playing ? 'pause' : 'play'} size={22} color="#000" style={player.playing ? null : { marginLeft: 2 }} />
+            <Ionicons
+              name={player.playing ? 'pause' : 'play'}
+              size={22}
+              color="#000"
+              style={player.playing ? null : { marginLeft: 2 }}
+            />
           )}
         </Pressable>
         <Pressable accessibilityLabel="Siguiente" hitSlop={8} onPress={player.next}>
@@ -63,10 +81,21 @@ export function PlayerBar({ player }: { player: Player }): React.JSX.Element | n
 }
 
 const styles = StyleSheet.create({
-  bar: { backgroundColor: '#15131c', borderTopColor: colors.border, borderTopWidth: 1, paddingBottom: 24 },
+  bar: {
+    backgroundColor: '#15131c',
+    borderTopColor: colors.border,
+    borderTopWidth: 1,
+    paddingBottom: 24
+  },
   track: { height: 3, backgroundColor: 'rgba(255,255,255,0.12)' },
   fill: { height: 3, backgroundColor: colors.pinkSoft },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 14, paddingTop: 10 },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingHorizontal: 14,
+    paddingTop: 10
+  },
   cover: { width: 46, height: 46, borderRadius: 8, backgroundColor: '#27272a' },
   coverEmpty: { alignItems: 'center', justifyContent: 'center' },
   text: { flex: 1, minWidth: 0 },
