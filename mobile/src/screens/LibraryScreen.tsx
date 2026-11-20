@@ -6,6 +6,7 @@ import {
   FlatList,
   Image,
   Pressable,
+  Switch,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -57,7 +58,13 @@ interface Props {
   progress?: DownloadProgress | null
   onCancelDownloads?: () => void
 
-  /** Opens the YouTube search (to mark songs for the computer). */
+  /** The selected playlist is kept downloaded (new songs too). */
+  keepDownloaded?: boolean
+  onToggleKeep?: () => void
+  wifiOnly?: boolean
+  onToggleWifiOnly?: () => void
+
+  /** Opens the search (to mark songs for the computer). */
   onOpenSearch?: () => void
   /** Songs marked here, waiting for the computer. */
   requests?: SongRequest[]
@@ -270,6 +277,31 @@ export function LibraryScreen(p: Props): React.JSX.Element {
             )
           )}
 
+          {!p.offline && p.onToggleWifiOnly && (
+            <View style={styles.switches}>
+              {p.playlistId && p.onToggleKeep && (
+                <View style={styles.switchRow}>
+                  <Text style={styles.switchText}>Mantener descargada</Text>
+                  <Switch
+                    accessibilityLabel="Mantener descargada"
+                    value={!!p.keepDownloaded}
+                    onValueChange={p.onToggleKeep}
+                    trackColor={{ true: colors.pink }}
+                  />
+                </View>
+              )}
+              <View style={styles.switchRow}>
+                <Text style={styles.switchText}>Descargar solo con Wi-Fi</Text>
+                <Switch
+                  accessibilityLabel="Descargar solo con Wi-Fi"
+                  value={!!p.wifiOnly}
+                  onValueChange={p.onToggleWifiOnly}
+                  trackColor={{ true: colors.pink }}
+                />
+              </View>
+            </View>
+          )}
+
           {p.error && (
             <Text testID="error" style={styles.error}>
               {p.error}
@@ -438,6 +470,9 @@ const styles = StyleSheet.create({
   progressText: { color: colors.muted, fontSize: 13, flex: 1 },
   link: { color: colors.pinkSoft, fontSize: 14, fontWeight: '600' },
   error: { color: colors.red, marginTop: 12, fontSize: 14 },
+  switches: { marginTop: 10 },
+  switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  switchText: { color: colors.muted, fontSize: 14 },
   empty: { color: colors.faint, textAlign: 'center', padding: 32, fontSize: 15, lineHeight: 22 },
   row: {
     flexDirection: 'row',

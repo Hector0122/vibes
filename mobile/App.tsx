@@ -4,7 +4,15 @@ import { ActivityIndicator, Alert, Linking, StyleSheet, View } from 'react-nativ
 import type { CloudPlaylist, CloudSong, SongRequest } from '../src/shared/api'
 import { CloudError, createCloud, type Cloud } from './src/cloud'
 import { PlayerBar } from './src/components/PlayerBar'
-import { loadSnapshot, saveSnapshot } from './src/offline'
+import {
+  DEFAULT_PREFS,
+  loadPrefs,
+  loadSnapshot,
+  savePrefs,
+  saveSnapshot,
+  type Prefs
+} from './src/offline'
+import { onWifi } from './src/network'
 import { LibraryScreen, type DownloadState } from './src/screens/LibraryScreen'
 import { SearchScreen } from './src/screens/SearchScreen'
 import { SettingsScreen } from './src/screens/SettingsScreen'
@@ -30,6 +38,7 @@ export default function App(): React.JSX.Element {
   const [onlyDownloaded, setOnlyDownloaded] = useState(false)
   const [requests, setRequests] = useState<SongRequest[]>([])
   const [searching, setSearching] = useState(false)
+  const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS)
 
   const cloud: Cloud | null = useMemo(() => {
     if (!settings) return null
@@ -56,6 +65,7 @@ export default function App(): React.JSX.Element {
 
   useEffect(() => {
     loadSettings().then(setSettings)
+    loadPrefs().then(setPrefs, () => {})
     // The last library seen, so the app opens (and plays downloads) without internet.
     loadSnapshot().then((s) => {
       if (!s) return
@@ -91,6 +101,50 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  const updatePrefs = (patch: Partial<Prefs>): void => {
+    setPrefs((p) => {
+      const next = { ...p, ...patch }
+      void savePrefs(next).catch(() => {})
+      return next
+    })
+  }
+
+  // Kept playlists: whatever they have that isn't on the phone yet is downloaded
+  // (new songs too, after each refresh), on Wi-Fi only if so set.
+  const { download } = downloads
+  useEffect(() => {
+    if (offline || !downloadsReady || prefs.keep.length === 0 || songs.length === 0) return
+    const byIdNow = new Map(songs.map((s) => [s.id, s]))
+    const wanted = playlists
+      .filter((p) => prefs.keep.includes(p.id))
+      .flatMap((p) => p.songIds.map((id) => byIdNow.get(id)).filter((s): s is CloudSong => !!s))
+    if (wanted.length === 0) return
+    let cancelled = false
+    void (async () => {
+      if (prefs.wifiOnly && !(await onWifi())) return
+      if (!cancelled) download(wanted)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [offline, downloadsReady, prefs, songs, playlists, download])
+
+  /** Manual downloads: on mobile data with "solo Wi-Fi" on, ask first. */
+  const downloadAsked = async (list: CloudSong[]): Promise<void> => {
+    if (!prefs.wifiOnly || (await onWifi())) {
+      download(list)
+      return
+    }
+    Alert.alert(
+      'Estás usando datos móviles',
+      '¿Descargar de todos modos? Puede gastar tu plan de datos.',
+      [
+        { text: 'Esperar a Wi-Fi', style: 'cancel' },
+        { text: 'Descargar', onPress: () => download(list) }
+      ]
+    )
+  }
 
   // Songs deleted from the cloud don't keep taking space on the phone.
   useEffect(() => {
@@ -207,7 +261,18 @@ export default function App(): React.JSX.Element {
           onlyDownloaded={onlyDownloaded}
           onToggleOnlyDownloaded={() => setOnlyDownloaded((v) => !v)}
           downloadState={downloadState}
-          onDownload={downloads.download}
+          onDownload={(list) => void downloadAsked(list)}
+          keepDownloaded={!!selected && prefs.keep.includes(selected.id)}
+          onToggleKeep={() =>
+            selected &&
+            updatePrefs({
+              keep: prefs.keep.includes(selected.id)
+                ? prefs.keep.filter((x) => x !== selected.id)
+                : [...prefs.keep, selected.id]
+            })
+          }
+          wifiOnly={prefs.wifiOnly}
+          onToggleWifiOnly={() => updatePrefs({ wifiOnly: !prefs.wifiOnly })}
           onRemoveDownload={(s) => downloads.remove([s.id])}
           progress={downloads.progress}
           onCancelDownloads={downloads.cancel}

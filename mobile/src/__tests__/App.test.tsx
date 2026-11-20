@@ -13,6 +13,8 @@ const audio = require('expo-audio') as typeof import('../../__mocks__/expo-audio
 const store = require('expo-secure-store') as typeof import('../../__mocks__/expo-secure-store')
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const fs = require('expo-file-system') as typeof import('../../__mocks__/expo-file-system')
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const net = require('expo-network') as typeof import('../../__mocks__/expo-network')
 
 const TOKEN = 'secret-token'
 const song = (id: string, title: string, artists: string): CloudSong => ({
@@ -133,6 +135,7 @@ beforeEach(() => {
   engine.reset()
   audio.mockPlaylistReset()
   fs.mockFsReset()
+  net.mockNetwork.type = net.NetworkStateType.WIFI
   requests.length = 0
   PLAYLISTS = []
   REQUESTS = []
@@ -493,6 +496,69 @@ describe('with the cloud set up', () => {
     await fireEvent.press(screen.getByLabelText('Agregar: La Célula Que Explota'))
     expect(await screen.findByText('Pendiente')).toBeTruthy()
     expect(REQUESTS.map((r) => r.id)).toEqual(['fffffffffff'])
+  })
+})
+
+describe('kept playlists and Wi-Fi', () => {
+  beforeEach(() => {
+    store.mockStore.set(
+      'vibes.cloud',
+      JSON.stringify({ url: 'https://w.example.dev', token: TOKEN })
+    )
+    PLAYLISTS = [
+      {
+        id: 'p1',
+        name: 'Viaje',
+        songIds: ['aaaaaaaaaaa', 'ccccccccccc'],
+        createdAt: 0,
+        updatedAt: 0
+      }
+    ]
+  })
+
+  it('"Mantener descargada" downloads the playlist, and keeps doing it after a refresh', async () => {
+    await render(<App />)
+    await fireEvent.press(await screen.findByText('Viaje'))
+    await fireEvent(screen.getByLabelText('Mantener descargada'), 'valueChange', true)
+    await waitFor(() => expect(fs.mockDownloads.urls).toHaveLength(2))
+    expect(JSON.parse(fs.mockDisk.get('file:///docs/vibes/prefs.json')!)).toEqual({
+      wifiOnly: true,
+      keep: ['p1']
+    })
+    // A song is added to it on the computer: the next refresh brings it down too.
+    PLAYLISTS = [{ ...PLAYLISTS[0], songIds: ['aaaaaaaaaaa', 'ccccccccccc', 'bbbbbbbbbbb'] }]
+    await act(async () => screen.getByTestId('library').props.refreshControl.props.onRefresh())
+    await waitFor(() => expect(fs.mockDownloads.urls).toHaveLength(3))
+  })
+
+  it('on mobile data: kept playlists wait for Wi-Fi, and a manual download asks first', async () => {
+    fs.mockDisk.set(
+      'file:///docs/vibes/prefs.json',
+      JSON.stringify({ wifiOnly: true, keep: ['p1'] })
+    )
+    net.mockNetwork.type = net.NetworkStateType.CELLULAR
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {})
+    try {
+      await render(<App />)
+      await screen.findByTestId('song-bbbbbbbbbbb')
+      await act(() => new Promise((r) => setTimeout(r, 20)))
+      expect(fs.mockDownloads.urls).toEqual([])
+      await fireEvent.press(screen.getByLabelText('Descargar: Sin Documentos'))
+      await waitFor(() =>
+        expect(alert).toHaveBeenCalledWith(
+          'Estás usando datos móviles',
+          expect.any(String),
+          expect.any(Array)
+        )
+      )
+      expect(fs.mockDownloads.urls).toEqual([])
+      // Accepting downloads it.
+      const buttons = alert.mock.calls[0][2]!
+      await act(async () => buttons.find((b) => b.text === 'Descargar')!.onPress!())
+      await waitFor(() => expect(fs.mockDownloads.urls).toHaveLength(1))
+    } finally {
+      alert.mockRestore()
+    }
   })
 })
 
