@@ -50,7 +50,7 @@ los instaladores como *Artifacts* de la corrida.
 
 ### Pendiente / siguiente
 
-- Probar la APK 1.0.0 en un celular real y en Waydroid (las pruebas automáticas pasan; en un teléfono aún no).
+- Probar la APK 1.0.1 en un celular real y en Waydroid (las pruebas automáticas pasan; en un teléfono aún no).
 - Playlists y conteo de reproducciones viven solo en la computadora: subirlos a la nube para verlos en el celular.
 - Celular: descargar canciones para escuchar sin internet; siguiente/anterior en la pantalla bloqueada.
 - Opcional: Groq para pedir música con palabras ("algo tranquilo para trabajar").
@@ -65,7 +65,7 @@ los instaladores como *Artifacts* de la corrida.
 
 ```bash
 pnpm build:linux                                  # genera dist/vibes_<versión>_amd64.deb y dist/Vibes-<versión>.AppImage
-sudo apt install ./dist/vibes_1.0.0_amd64.deb     # queda en el menú como "Vibes"
+sudo apt install ./dist/vibes_1.0.1_amd64.deb     # queda en el menú como "Vibes"
 ```
 
 El `.deb` instala `ffmpeg` como dependencia. `yt-dlp` instálalo aparte con `pipx install yt-dlp` (el de apt
