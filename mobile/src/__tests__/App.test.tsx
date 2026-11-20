@@ -5,6 +5,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native'
 import { Alert, Linking } from 'react-native'
 import App from '../../App'
+import { engine } from '../engine'
 import type { CloudSong } from '../../../src/shared/api'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const audio = require('expo-audio') as typeof import('../../__mocks__/expo-audio')
@@ -129,6 +130,8 @@ function fakeWorker(): void {
 beforeEach(() => {
   store.mockStore.clear()
   audio.mockReset()
+  engine.reset()
+  audio.mockPlaylistReset()
   fs.mockFsReset()
   requests.length = 0
   PLAYLISTS = []
@@ -173,24 +176,43 @@ describe('with the cloud set up', () => {
     )
   })
 
-  it('tap a song: it streams from a signed URL, shows on the lock screen, and plays the next one when it ends', async () => {
+  it('tap a song: it streams from a signed URL, the next one is already queued natively, and Android moves on by itself', async () => {
     await render(<App />)
     await fireEvent.press(await screen.findByTestId('song-bbbbbbbbbbb'))
     await waitFor(() =>
-      expect(audio.mockPlayer.sources).toEqual(['https://r2.test/songs/bbbbbbbbbbb.m4a?sig=1'])
+      expect(audio.mockPlaylist.played).toEqual(['https://r2.test/songs/bbbbbbbbbbb.m4a?sig=1'])
     )
-    expect(audio.mockPlayer.play).toHaveBeenCalled()
-    expect(audio.mockPlayer.setActiveForLockScreen).toHaveBeenCalledWith(
+    expect(audio.mockPlaylist.setActiveForLockScreen).toHaveBeenCalledWith(
       true,
       expect.objectContaining({ title: 'Sin Documentos', artist: 'Los Rodríguez' })
     )
     expect(nowPlaying()).toBe('Sin Documentos')
     expect(screen.getByLabelText('Pausar')).toBeTruthy()
+    // The next song is in the native list before this one ends (no app work needed with the screen off).
+    await waitFor(() => expect(audio.mockPlaylist.uris).toHaveLength(2))
+    expect(audio.mockPlaylist.uris[1]).toContain('ccccccccccc')
 
-    // The song ends by itself → the next in the list.
-    await act(() => audio.mockStatus({ didJustFinish: true, playing: false }))
+    // The song ends by itself → Android plays the next; the app follows and queues the one after.
+    await act(() => audio.mockPlaylistFinish())
     await waitFor(() => expect(nowPlaying()).toBe('Flaca'))
-    expect(audio.mockPlayer.sources.at(-1)).toContain('ccccccccccc')
+    expect(audio.mockPlaylist.played.at(-1)).toContain('ccccccccccc')
+    expect(audio.mockPlaylist.updateLockScreenMetadata).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Flaca' })
+    )
+    await waitFor(() => expect(audio.mockPlaylist.uris.at(-1)).toContain('aaaaaaaaaaa')) // the list wraps around
+    expect(audio.mockPlaylist.uris).toHaveLength(3) // before, playing, after
+  })
+
+  it('lock screen ⏭ and ⏮ (the native list moves; the app follows)', async () => {
+    await render(<App />)
+    await fireEvent.press(await screen.findByTestId('song-aaaaaaaaaaa'))
+    await waitFor(() => expect(audio.mockPlaylist.uris).toHaveLength(2))
+    await act(() => audio.mockPlaylist.next()) // ⏭ from the lock screen
+    await waitFor(() => expect(nowPlaying()).toBe('Sin Documentos'))
+    await waitFor(() => expect(audio.mockPlaylist.uris).toHaveLength(3))
+    await act(() => audio.mockPlaylist.previous()) // ⏮ from the lock screen
+    await waitFor(() => expect(nowPlaying()).toBe('Afuera'))
+    expect(audio.mockPlaylist.uris[audio.mockPlaylist.currentIndex]).toContain('aaaaaaaaaaa')
   })
 
   it('pause, play, previous and next buttons', async () => {
@@ -198,9 +220,9 @@ describe('with the cloud set up', () => {
     await fireEvent.press(await screen.findByTestId('song-aaaaaaaaaaa'))
     await waitFor(() => expect(nowPlaying()).toBe('Afuera'))
     await fireEvent.press(screen.getByLabelText('Pausar'))
-    expect(audio.mockPlayer.pause).toHaveBeenCalled()
+    expect(audio.mockPlaylist.pause).toHaveBeenCalled()
     await fireEvent.press(await screen.findByLabelText('Reproducir'))
-    expect(audio.mockPlayer.play).toHaveBeenCalledTimes(2)
+    expect(audio.mockPlaylist.play).toHaveBeenCalledTimes(2)
     await fireEvent.press(screen.getByLabelText('Siguiente'))
     await waitFor(() => expect(nowPlaying()).toBe('Sin Documentos'))
     await fireEvent.press(screen.getByLabelText('Anterior'))
@@ -214,8 +236,9 @@ describe('with the cloud set up', () => {
     expect(screen.queryByTestId('song-aaaaaaaaaaa')).toBeNull()
     await fireEvent.press(screen.getByTestId('song-ccccccccccc'))
     await waitFor(() => expect(nowPlaying()).toBe('Flaca'))
-    await fireEvent.press(screen.getByLabelText('Siguiente')) // only one song matches: it starts over
-    await waitFor(() => expect(audio.mockPlayer.seekTo).toHaveBeenCalledWith(0))
+    await fireEvent.press(screen.getByLabelText('Siguiente')) // only one song matches: it plays again
+    await waitFor(() => expect(audio.mockPlaylist.played).toHaveLength(2))
+    expect(audio.mockPlaylist.played.every((u) => u.includes('ccccccccccc'))).toBe(true)
     expect(nowPlaying()).toBe('Flaca')
   })
 
@@ -223,7 +246,7 @@ describe('with the cloud set up', () => {
     await render(<App />)
     await screen.findByTestId('song-aaaaaaaaaaa')
     await fireEvent.press(screen.getAllByLabelText('Aleatorio')[0]) // the header button: shuffle all
-    await waitFor(() => expect(audio.mockPlayer.sources).toHaveLength(1))
+    await waitFor(() => expect(audio.mockPlaylist.played).toHaveLength(1))
     const order = [nowPlaying()]
     for (let i = 0; i < 2; i++) {
       await fireEvent.press(screen.getByLabelText('Siguiente'))
@@ -236,15 +259,16 @@ describe('with the cloud set up', () => {
   it('after a long pause it gets a fresh signed URL and resumes where it was', async () => {
     await render(<App />)
     await fireEvent.press(await screen.findByTestId('song-aaaaaaaaaaa'))
-    await waitFor(() => expect(audio.mockPlayer.sources).toHaveLength(1))
-    await act(() => audio.mockStatus({ currentTime: 95 }))
+    await waitFor(() => expect(audio.mockPlaylist.played).toHaveLength(1))
+    await act(() => audio.mockPlaylistStatus({ currentTime: 95 }))
     await fireEvent.press(screen.getByLabelText('Pausar'))
     const now = Date.now()
     const clock = jest.spyOn(Date, 'now').mockReturnValue(now + 11 * 60_000)
     try {
       await fireEvent.press(await screen.findByLabelText('Reproducir'))
-      await waitFor(() => expect(audio.mockPlayer.sources).toHaveLength(2))
-      expect(audio.mockPlayer.seekTo).toHaveBeenCalledWith(95)
+      await waitFor(() => expect(audio.mockPlaylist.played).toHaveLength(2))
+      expect(audio.mockPlaylist.seekTo).toHaveBeenCalledWith(95)
+      expect(audio.mockPlaylist.clear).toHaveBeenCalledTimes(2) // reloaded with a fresh URL
       expect(nowPlaying()).toBe('Afuera')
     } finally {
       clock.mockRestore()
@@ -301,7 +325,7 @@ describe('with the cloud set up', () => {
 
     await fireEvent.press(screen.getByTestId('song-bbbbbbbbbbb'))
     await waitFor(() => expect(nowPlaying()).toBe('Sin Documentos'))
-    expect(audio.mockPlayer.sources).toEqual(['file:///docs/vibes/songs/bbbbbbbbbbb.m4a'])
+    expect(audio.mockPlaylist.played).toEqual(['file:///docs/vibes/songs/bbbbbbbbbbb.m4a'])
   })
 
   it('without internet: the saved library opens, only downloads show, and they play', async () => {
@@ -323,9 +347,10 @@ describe('with the cloud set up', () => {
     expect(screen.queryByTestId('error')).toBeNull()
     await fireEvent.press(screen.getByTestId('song-bbbbbbbbbbb'))
     await waitFor(() => expect(nowPlaying()).toBe('Sin Documentos'))
-    await act(() => audio.mockStatus({ didJustFinish: true, playing: false }))
+    await act(() => audio.mockPlaylistFinish())
     await waitFor(() => expect(nowPlaying()).toBe('Flaca'))
-    expect(audio.mockPlayer.sources).toEqual([
+    expect(requests.filter((u) => u.includes('/stream'))).toEqual([]) // nothing from the internet
+    expect(audio.mockPlaylist.played).toEqual([
       'file:///docs/vibes/songs/bbbbbbbbbbb.m4a',
       'file:///docs/vibes/songs/ccccccccccc.m4a'
     ])

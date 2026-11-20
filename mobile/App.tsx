@@ -12,6 +12,7 @@ import { loadSettings, saveSettings, type CloudSettings } from './src/settings'
 import { colors } from './src/theme'
 import { checkForUpdate } from './src/updates'
 import { useOffline } from './src/useOffline'
+import { engine } from './src/engine'
 import { usePlayer } from './src/usePlayer'
 
 export default function App(): React.JSX.Element {
@@ -40,7 +41,7 @@ export default function App(): React.JSX.Element {
   }, [settings])
 
   const downloads = useOffline(cloud)
-  const player = usePlayer(cloud, queue, downloads.localUri)
+  const player = usePlayer(cloud, queue)
 
   // A newer APK on GitHub: offer it (Android asks before installing).
   useEffect(() => {
@@ -95,6 +96,11 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     if (downloadsReady && !offline && !loading && songs.length > 0) prune(songs.map((s) => s.id))
   }, [downloadsReady, offline, loading, songs, prune])
+
+  // Last time's song, paused where it was (once the library is known).
+  useEffect(() => {
+    if (songs.length) void engine.restore(songs)
+  }, [songs])
 
   // A playlist deleted on the computer: back to all songs.
   useEffect(() => {

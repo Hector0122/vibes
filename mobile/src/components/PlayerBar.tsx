@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native'
 import { colors } from '../theme'
 import type { Player } from '../usePlayer'
+import { SleepTimer } from './SleepTimer'
 
 /** The bar at the bottom: what's playing, progress, and the controls. */
 export function PlayerBar({ player }: { player: Player }): React.JSX.Element | null {
@@ -30,6 +31,7 @@ export function PlayerBar({ player }: { player: Player }): React.JSX.Element | n
             {player.error ?? s.artists}
           </Text>
         </View>
+        <SleepTimer player={player} />
         <Pressable
           accessibilityLabel="Aleatorio"
           accessibilityState={{ selected: player.shuffle }}

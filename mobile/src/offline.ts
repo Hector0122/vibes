@@ -88,3 +88,21 @@ export function freeSpace(): number | null {
     return null
   }
 }
+
+/** What was playing, to pick up where you left off (also what the widget plays). */
+export interface Session {
+  current: CloudSong
+  time: number
+  queueIds: string[]
+  shuffle: boolean
+  savedAt: number
+}
+
+const sessionFile = (): File => new File(root(), 'session.json')
+
+export async function loadSession(): Promise<Session | null> {
+  const s = await readJson<Session>(sessionFile())
+  return s && s.current && typeof s.current.id === 'string' && Array.isArray(s.queueIds) ? s : null
+}
+
+export const saveSession = (s: Session): Promise<void> => writeJson(sessionFile(), s)
