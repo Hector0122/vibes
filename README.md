@@ -60,6 +60,11 @@ los instaladores como *Artifacts* de la corrida.
 
 ### Pendiente / siguiente
 
+- **⚠️ Actualizar la nube (en la laptop):** la 1.1.0 trae cambios en el Worker que aún no están desplegados.
+  Desde `worker/`: `git pull` y luego `pnpm migrate:remote && pnpm deploy` (misma sesión de `wrangler login`;
+  la URL y el token de la app no cambian). Hasta entonces el celular funciona, pero sin playlists, sin
+  "Agregar música" y sin sugerencias. Opcional: conectar el repo en Cloudflare (Worker → Settings → Build)
+  para que se despliegue solo como los otros Workers.
 - Probar la APK 1.1.0 en un celular real y en Waydroid (las pruebas automáticas pasan; en un teléfono aún no).
 - El conteo de reproducciones vive solo en la computadora.
 - Celular: siguiente/anterior en la pantalla bloqueada.
