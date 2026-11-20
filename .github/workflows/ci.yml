@@ -22,6 +22,7 @@ jobs:
           cache-dependency-path: |
             pnpm-lock.yaml
             worker/pnpm-lock.yaml
+            mobile/pnpm-lock.yaml
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg xvfb
 
       # Root deps first: the Worker imports src/shared/api.ts, and compiling it reads the root
@@ -31,6 +32,11 @@ jobs:
       - name: Worker
         working-directory: worker
         run: pnpm install --frozen-lockfile && pnpm typecheck && pnpm test
+
+      # The phone app's client-vs-Worker tests run here too; compiling them reads mobile/tsconfig.json (expo).
+      - name: Mobile deps
+        working-directory: mobile
+        run: pnpm install --frozen-lockfile
 
       - run: pnpm test
       - run: xvfb-run -a pnpm test:e2e
