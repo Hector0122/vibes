@@ -1,41 +1,59 @@
 # Vibes 🎧
 
-Tu música sin anuncios. Vibes importa tu biblioteca de **eSound**, descarga lo que falte con
-**yt-dlp** y guarda todo en **tu propio Cloudflare** (R2 + D1), para escucharla en escritorio y, más
-adelante, en el celular.
+Tu música sin anuncios. Vibes importa tu biblioteca de **eSound**, busca y descarga canciones de
+YouTube con **yt-dlp** y guarda todo en **tu propio Cloudflare** (R2 + D1), para escucharla en la
+computadora y en el celular.
 
 > **Uso personal.** Vibes descarga audio de YouTube con yt-dlp, lo cual va contra los términos de
 > servicio de YouTube. Úsalo solo con tu propia biblioteca y bajo tu responsabilidad. Este repo no
 > incluye música ni datos de nadie.
 
-## Qué hace hoy (fase 1)
+## Descargar
 
-- **Importar de eSound**: lee la base de datos local de eSound (sin modificarla), trae tus canciones
-  con su ID de YouTube, Deezer e ISRC, y copia los audios que eSound ya tenía en caché.
-- **Descargar faltantes**: baja con yt-dlp el audio (m4a) de las canciones que no estaban en caché.
-- **Reproductor**: búsqueda, solo guardadas, anterior/siguiente, aleatorio, adelantar y teclas
-  multimedia.
-- **Subir a la nube**: sube cada canción a tu bucket R2 y su metadata a D1, con un Worker de
-  Cloudflare protegido por un token personal. Lo que ya está arriba no se vuelve a subir.
+En **[Releases](../../releases)** de GitHub, cada versión (`v1.0.0`, …) trae:
 
-### Siguiente
+- `vibes_<versión>_amd64.deb` → `sudo apt install ./vibes_*.deb` (queda en el menú como "Vibes")
+- `Vibes-<versión>.AppImage` → sin instalar
+- `vibes-<versión>.apk` → Android (permite apps de "fuentes desconocidas"); también corre en Waydroid:
+  `waydroid app install vibes-*.apk`
 
-- **Fase 2: recomendaciones.** Deezer da canciones reales parecidas a las tuyas y Groq las elige y
-  ordena según tu gusto (la llave de Groq vive como secreto del Worker). Buscador para agregar
-  canciones nuevas.
-- **Fase 3: Android.** React Native, reproduce desde tu R2.
+Para sacar una versión: sube el número en `package.json` y `mobile/app.json`, y publica una etiqueta
+`git tag -a vX.Y.Z -m "Vibes X.Y.Z" && git push origin vX.Y.Z`. GitHub Actions corre todas las pruebas,
+arma los instaladores y crea la release (~25 min, la APK es lo más lento). Cada push a `main` también deja
+los instaladores como *Artifacts* de la corrida.
 
-## Celular (`mobile/`)
+## Qué hace hoy (v1.0)
 
-App de Expo que escucha tu biblioteca desde tu nube: búsqueda, aleatorio, reproducción automática y
-sigue sonando con la pantalla apagada. Para probarla en tu Android, instala **Expo Go** y, en la misma
-Wi-Fi:
+**Escritorio (Electron)**
 
-```bash
-cd mobile && pnpm install && pnpm start   # escanea el QR con Expo Go
-```
+- **Inicio**: buscador de YouTube y "Recomendado para ti" (mezclas de YouTube de canciones de tu
+  biblioteca, sin las que ya tienes). ▶ para escuchar sin agregar, **Agregar** para descargarla, guardarla
+  y subirla a la nube. Las portadas y el álbum reales salen de Deezer.
+- **Biblioteca**: tabla con búsqueda, solo guardadas, reproducir todo / aleatorio, estado por canción
+  (en la nube, sin audio, error) y los errores agrupados arriba.
+- **Playlists**: crear, renombrar, eliminar; agregar con el **+** de cada canción o arrastrándola a la
+  barra lateral; reordenar arrastrando.
+- **Reproductor**: reproducción automática, aleatorio tipo baraja (todas suenan antes de repetir),
+  "anterior" real, volumen, teclas multimedia, **radio sin fin** (al acabarse la lista siguen canciones
+  parecidas). El color de la app sigue a la portada que suena.
+- **Reproduciendo ahora**: clic en la canción del reproductor → portada grande y **letra sincronizada**
+  (LRCLIB; se guarda en disco).
+- **Herramientas**: importar de eSound (solo con la biblioteca vacía), descargar faltantes, subir a la nube.
+- Cuenta reproducciones (a los 30 s) para afinar las recomendaciones.
 
-La primera vez pide la URL del Worker y tu token (el de `~/.config/vibes/api_token`).
+**Celular (`mobile/`, Expo)**
+
+- Escucha tu nube: lista, búsqueda, aleatorio, reproducción automática, sigue sonando con la pantalla
+  apagada y muestra la canción en la pantalla bloqueada. La primera vez pide la URL del Worker y tu token
+  (el de `~/.config/vibes/api_token`); se guardan en el almacén seguro del teléfono.
+- Para desarrollo: `cd mobile && pnpm install && pnpm start` y escanea el QR con **Expo Go**.
+
+### Pendiente / siguiente
+
+- Probar la APK 1.0.0 en un celular real y en Waydroid (las pruebas automáticas pasan; en un teléfono aún no).
+- Playlists y conteo de reproducciones viven solo en la computadora: subirlos a la nube para verlos en el celular.
+- Celular: descargar canciones para escuchar sin internet; siguiente/anterior en la pantalla bloqueada.
+- Opcional: Groq para pedir música con palabras ("algo tranquilo para trabajar").
 
 ## Requisitos
 
@@ -47,7 +65,7 @@ La primera vez pide la URL del Worker y tu token (el de `~/.config/vibes/api_tok
 
 ```bash
 pnpm build:linux                                  # genera dist/vibes_<versión>_amd64.deb y dist/Vibes-<versión>.AppImage
-sudo apt install ./dist/vibes_0.1.0_amd64.deb     # queda en el menú como "Vibes"
+sudo apt install ./dist/vibes_1.0.0_amd64.deb     # queda en el menú como "Vibes"
 ```
 
 El `.deb` instala `ffmpeg` como dependencia. `yt-dlp` instálalo aparte con `pipx install yt-dlp` (el de apt
@@ -57,10 +75,16 @@ suele estar viejo para YouTube); la app lo encuentra aunque esté en `~/.local/b
 
 ```bash
 pnpm install
-pnpm dev          # abre la app
-pnpm test         # pruebas unitarias e integración
-pnpm test:e2e     # compila y prueba el flujo completo en la app real
+pnpm dev               # abre la app
+pnpm test              # unitarias e integración (incluye el cliente del celular contra el Worker real)
+pnpm test:e2e          # compila y prueba el flujo completo en la app real (Deezer/LRCLIB/YouTube falsos)
+pnpm test:e2e:dist     # el mismo flujo sobre la app empaquetada (después de pnpm build:linux)
+(cd worker && pnpm test)   # API del Worker con el SQL real de la migración
+(cd mobile && pnpm test)   # pantallas del celular (Jest + Testing Library)
 ```
+
+Código compartido entre escritorio y celular: `src/shared/` (contrato de la API y la lógica de qué
+canción sigue).
 
 ## Tu nube (una sola vez)
 
@@ -92,12 +116,12 @@ guarda cifrado con el llavero del sistema.
 ## Cómo está armado
 
 ```
-Escritorio (Electron)        Cloudflare (tu cuenta)
-┌──────────────────┐        ┌────────────────────────┐
-│ importa eSound    │        │ Worker /v1 + token      │
-│ yt-dlp descarga   │──sube─▶│ D1: canciones (metadata)│
-│ reproductor local │        │ R2: songs/{id}.m4a      │
-└──────────────────┘        └────────────────────────┘
+Escritorio (Electron)        Cloudflare (tu cuenta)          Celular (Expo)
+┌──────────────────┐        ┌────────────────────────┐      ┌──────────────────┐
+│ importa eSound    │        │ Worker /v1 + token      │      │ lista tu nube     │
+│ busca/baja yt-dlp │──sube─▶│ D1: canciones (metadata)│◀─────│ reproduce de R2   │
+│ reproductor local │        │ R2: songs/{id}.m4a      │      │ (URL firmada)     │
+└──────────────────┘        └────────────────────────┘      └──────────────────┘
 ```
 
 - El ID de cada canción es su ID de video de YouTube, así que nunca se duplica.
