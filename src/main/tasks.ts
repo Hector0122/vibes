@@ -117,7 +117,7 @@ export async function addFromSearch(
     title: String(r.title ?? ''),
     artists: String(r.artists ?? ''),
     album: null,
-    deezerId: null,
+    deezerId: typeof r.deezerId === 'string' && /^\d{1,20}$/.test(r.deezerId) ? r.deezerId : null,
     deezerArtistId: null,
     isrc: null,
     durationSec: typeof r.durationSec === 'number' ? r.durationSec : null,

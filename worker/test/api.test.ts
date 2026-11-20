@@ -124,3 +124,43 @@ describe('stream and delete', () => {
     expect(await listSongs()).toEqual([])
   })
 })
+
+describe('playlists', () => {
+  const pl = (id: string, name: string, songIds: string[]) => ({ id, name, songIds, createdAt: 1, updatedAt: 2 })
+
+  it('starts empty; PUT replaces the whole set and GET returns it in order', async () => {
+    expect(await (await h.call('GET', '/v1/playlists')).json()).toEqual({ playlists: [] })
+    const first = [pl('b1', 'Para correr', [SONG_ID]), pl('a2', '  Noche  ', [])]
+    const res = await h.call('PUT', '/v1/playlists', { playlists: first })
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as { playlists: { name: string }[] }).playlists.map((p) => p.name)).toEqual([
+      'Para correr',
+      'Noche'
+    ])
+
+    // A playlist deleted on the desktop disappears from the cloud too.
+    await h.call('PUT', '/v1/playlists', { playlists: [pl('a2', 'Noche', [SONG_ID, 'aaaaaaaaaaa'])] })
+    expect(await (await h.call('GET', '/v1/playlists')).json()).toEqual({
+      playlists: [pl('a2', 'Noche', [SONG_ID, 'aaaaaaaaaaa'])]
+    })
+  })
+
+  it('rejects an invalid set without touching what is stored', async () => {
+    await h.call('PUT', '/v1/playlists', { playlists: [pl('x', 'Buena', [])] })
+    for (const bad of [
+      {},
+      { playlists: [pl('x', '', [])] },
+      { playlists: [pl('x', 'a', ['no es un id'])] },
+      { playlists: [pl('dup', 'a', []), pl('dup', 'b', [])] },
+      { playlists: [pl('bad/id', 'a', [])] }
+    ]) {
+      expect((await h.call('PUT', '/v1/playlists', bad)).status).toBe(400)
+    }
+    expect(await (await h.call('GET', '/v1/playlists')).json()).toEqual({ playlists: [pl('x', 'Buena', [])] })
+  })
+
+  it('needs the token', async () => {
+    expect((await h.call('GET', '/v1/playlists', undefined, null)).status).toBe(401)
+    expect((await h.call('PUT', '/v1/playlists', { playlists: [] }, 'nope')).status).toBe(401)
+  })
+})

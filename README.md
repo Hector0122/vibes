@@ -22,7 +22,7 @@ Para sacar una versión: sube el número en `package.json` y `mobile/app.json`, 
 arma los instaladores y crea la release (~25 min, la APK es lo más lento). Cada push a `main` también deja
 los instaladores como *Artifacts* de la corrida.
 
-## Qué hace hoy (v1.0)
+## Qué hace hoy (v1.1)
 
 **Escritorio (Electron)**
 
@@ -46,13 +46,28 @@ los instaladores como *Artifacts* de la corrida.
 - Escucha tu nube: lista, búsqueda, aleatorio, reproducción automática, sigue sonando con la pantalla
   apagada y muestra la canción en la pantalla bloqueada. La primera vez pide la URL del Worker y tu token
   (el de `~/.config/vibes/api_token`); se guardan en el almacén seguro del teléfono.
+- **Playlists**: las que armas en la computadora aparecen arriba como pestañas (se suben solas a la nube
+  cada vez que cambian).
+- **Sin internet**: ⬇ en cada canción, o "Descargar las N" para toda la lista o playlist. Las descargadas
+  suenan desde el teléfono; sin conexión la app abre con tu última biblioteca y solo muestra lo descargado.
+  El botón 📱 filtra a "solo descargadas"; ✓ quita una del teléfono (sigue en la nube).
+- **Agregar música** (➕ arriba): busca en Deezer (sin API key) o elige de "Recomendado para ti"; ▶ suena
+  un clip de 30 s. Toca **Agregar** y la canción queda en "Esperando a la compu": la próxima vez que Vibes esté
+  abierto en la computadora (revisa cada 2 minutos) la busca en YouTube, la descarga con yt-dlp, la sube y
+  aparece en el celular. Si no se pudo, ves el motivo y puedes reintentar o cancelar.
+- Al abrir revisa las releases de este repo: si hay una versión más nueva te ofrece descargar su APK.
 - Para desarrollo: `cd mobile && pnpm install && pnpm start` y escanea el QR con **Expo Go**.
 
 ### Pendiente / siguiente
 
-- Probar la APK 1.0.1 en un celular real y en Waydroid (las pruebas automáticas pasan; en un teléfono aún no).
-- Playlists y conteo de reproducciones viven solo en la computadora: subirlos a la nube para verlos en el celular.
-- Celular: descargar canciones para escuchar sin internet; siguiente/anterior en la pantalla bloqueada.
+- **⚠️ Actualizar la nube (en la laptop):** la 1.1.0 trae cambios en el Worker que aún no están desplegados.
+  Desde `worker/`: `git pull` y luego `pnpm migrate:remote && pnpm deploy` (misma sesión de `wrangler login`;
+  la URL y el token de la app no cambian). Hasta entonces el celular funciona, pero sin playlists, sin
+  "Agregar música" y sin sugerencias. Opcional: conectar el repo en Cloudflare (Worker → Settings → Build)
+  para que se despliegue solo como los otros Workers.
+- Probar la APK 1.1.0 en un celular real y en Waydroid (las pruebas automáticas pasan; en un teléfono aún no).
+- El conteo de reproducciones vive solo en la computadora.
+- Celular: siguiente/anterior en la pantalla bloqueada.
 - Opcional: Groq para pedir música con palabras ("algo tranquilo para trabajar").
 
 ## Requisitos
@@ -65,7 +80,7 @@ los instaladores como *Artifacts* de la corrida.
 
 ```bash
 pnpm build:linux                                  # genera dist/vibes_<versión>_amd64.deb y dist/Vibes-<versión>.AppImage
-sudo apt install ./dist/vibes_1.0.1_amd64.deb     # queda en el menú como "Vibes"
+sudo apt install ./dist/vibes_1.1.0_amd64.deb     # queda en el menú como "Vibes"
 ```
 
 El `.deb` instala `ffmpeg` como dependencia. `yt-dlp` instálalo aparte con `pipx install yt-dlp` (el de apt
@@ -97,6 +112,9 @@ pnpm exec wrangler r2 bucket create vibes
 pnpm exec wrangler d1 create vibes      # copia el database_id a wrangler.toml
 pnpm migrate:remote
 ```
+
+> **Al actualizar:** cuando cambie algo en `worker/`, desde esa carpeta corre `git pull` y luego
+> `pnpm migrate:remote && pnpm deploy` (aplica las tablas nuevas y sube el código nuevo).
 
 Crea un token de R2 en el dashboard de Cloudflare → R2 → *Manage API tokens* → **Object Read &
 Write** solo para el bucket `vibes`. Luego guarda los secretos (nunca van en el repo):

@@ -296,3 +296,41 @@ describe('streaming (fake yt-dlp)', () => {
     expect(r.map((x) => x.id)).toEqual([MIX_IDS[0]]) // Elefante's is known by name
   })
 })
+
+describe('pickYoutubeMatch (songs found on Deezer)', () => {
+  const r = (id: string, title: string, artists: string, durationSec: number | null): SearchResult => ({
+    id,
+    title,
+    artists,
+    durationSec,
+    coverUrl: ''
+  })
+  const want = { title: 'Feel Good Inc.', artists: 'Gorillaz', durationSec: 222 }
+
+  it('the artist upload with the same title and duration', async () => {
+    const { pickYoutubeMatch } = await import('../youtube')
+    expect(
+      pickYoutubeMatch(
+        [
+          r('live0000000', 'Feel Good Inc. (Live)', 'Gorillaz', 230),
+          r('cover000000', 'Feel Good Inc.', 'Some Cover Band', 222),
+          r('long0000000', 'Feel Good Inc.', 'Gorillaz', 300), // the long music video
+          r('good0000000', 'Feel Good Inc.', 'Gorillaz', 224)
+        ],
+        want
+      )?.id
+    ).toBe('good0000000')
+  })
+
+  it('nothing when no result is really that song', async () => {
+    const { pickYoutubeMatch } = await import('../youtube')
+    expect(pickYoutubeMatch([r('other000000', 'Clint Eastwood', 'Gorillaz', 222)], want)).toBeNull()
+    expect(pickYoutubeMatch([r('karaoke0000', 'Feel Good Inc. (Karaoke)', 'Gorillaz', 222)], want)).toBeNull()
+  })
+
+  it('a remix is fine when the remix is what was asked for; unknown duration is accepted', async () => {
+    const { pickYoutubeMatch } = await import('../youtube')
+    const rm = { title: 'Feel Good Inc. (Remix)', artists: 'Gorillaz', durationSec: 200 }
+    expect(pickYoutubeMatch([r('remix000000', 'Feel Good Inc. Remix', 'Gorillaz', null)], rm)?.id).toBe('remix000000')
+  })
+})

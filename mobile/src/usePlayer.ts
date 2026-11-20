@@ -1,4 +1,5 @@
-// Playback: streams songs from R2 (a fresh signed URL each time) with
+// Playback: plays the copy on the phone when there is one (offline), otherwise
+// streams from R2 (a fresh signed URL each time) with
 // expo-audio, keeps playing with the screen off, and shows the song on the
 // lock screen. What plays next/previous uses the same logic as the desktop
 // app (../../src/shared/queue.ts): autoplay, deck-style shuffle, real "previous".
@@ -21,13 +22,20 @@ export interface Player {
   shuffle: boolean
   play: (id: string) => Promise<void>
   toggle: () => void
+  /** Pauses if playing (e.g. while a preview clip plays). */
+  pause: () => void
   next: () => void
   prev: () => void
   seek: (t: number) => void
   setShuffle: (on: boolean) => void
 }
 
-export function usePlayer(cloud: Cloud | null, queue: CloudSong[]): Player {
+export function usePlayer(
+  cloud: Cloud | null,
+  queue: CloudSong[],
+  /** A file:// URI when the song is downloaded to the phone. */
+  localUri: (id: string) => string | null = () => null
+): Player {
   const player = useAudioPlayer(null, { updateInterval: 500 })
   const status = useAudioPlayerStatus(player)
   const [current, setCurrent] = useState<CloudSong | null>(null)
@@ -37,23 +45,29 @@ export function usePlayer(cloud: Cloud | null, queue: CloudSong[]): Player {
   const bag = useRef<string[]>([])
   const history = useRef<string[]>([])
   const pausedAt = useRef<number | null>(null)
+  /** The current song plays from a signed URL (which expires), not from the phone. */
+  const streaming = useRef(false)
   const ids = queue.map((s) => s.id)
 
   useEffect(() => {
     // Keep playing with the screen off / app in the background, and own the audio focus
     // (needed for the lock-screen controls).
-    setAudioModeAsync({ playsInSilentMode: true, shouldPlayInBackground: true, interruptionMode: 'doNotMix' }).catch(
-      () => {}
-    )
+    setAudioModeAsync({
+      playsInSilentMode: true,
+      shouldPlayInBackground: true,
+      interruptionMode: 'doNotMix'
+    }).catch(() => {})
   }, [])
 
   const load = useCallback(
     async (song: CloudSong, from = 0): Promise<void> => {
-      if (!cloud) return
+      const local = localUri(song.id)
+      if (!local && !cloud) return
       setLoading(true)
       setError(null)
       try {
-        const url = await cloud.streamUrl(song.id)
+        const url = local ?? (await cloud!.streamUrl(song.id))
+        streaming.current = !local
         player.replace({ uri: url })
         if (from > 0) await player.seekTo(from)
         player.play()
@@ -70,7 +84,7 @@ export function usePlayer(cloud: Cloud | null, queue: CloudSong[]): Player {
         setLoading(false)
       }
     },
-    [cloud, player]
+    [cloud, player, localUri]
   )
 
   const play = useCallback(
@@ -130,7 +144,7 @@ export function usePlayer(cloud: Cloud | null, queue: CloudSong[]): Player {
       return
     }
     // After a long pause the signed URL may have expired: get a new one and resume where it was.
-    if (pausedAt.current && Date.now() - pausedAt.current > STALE_AFTER_MS) {
+    if (streaming.current && pausedAt.current && Date.now() - pausedAt.current > STALE_AFTER_MS) {
       void load(current, status.currentTime)
       return
     }
@@ -148,6 +162,11 @@ export function usePlayer(cloud: Cloud | null, queue: CloudSong[]): Player {
     shuffle,
     play,
     toggle,
+    pause: () => {
+      if (!status.playing) return
+      player.pause()
+      pausedAt.current = Date.now()
+    },
     next,
     prev,
     seek: (t) => void player.seekTo(t),

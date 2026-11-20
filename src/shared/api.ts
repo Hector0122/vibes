@@ -84,3 +84,131 @@ export function pickMeta(m: SongMeta): SongMeta {
     coverUrl: m.coverUrl
   }
 }
+
+// Playlists: made on the desktop, mirrored to the cloud so the phone can show them.
+// The desktop sends the whole set each time (PUT /playlists replaces it).
+
+export const PLAYLIST_ID_RE = /^[A-Za-z0-9_-]{1,64}$/
+export const MAX_PLAYLISTS = 500
+export const MAX_PLAYLIST_SONGS = 10_000
+export const MAX_PLAYLIST_NAME = 100
+
+export interface CloudPlaylist {
+  id: string
+  name: string
+  /** Song ids (YouTube ids), in order. May name songs that aren't in the cloud yet. */
+  songIds: string[]
+  createdAt: number
+  updatedAt: number
+}
+
+export interface ListPlaylistsResponse {
+  playlists: CloudPlaylist[]
+}
+
+export type PutPlaylistsRequest = ListPlaylistsResponse
+
+/** Returns an error message, or null when the whole set is valid. */
+export function validatePlaylists(body: unknown): string | null {
+  const list = (body as { playlists?: unknown } | null)?.playlists
+  if (!Array.isArray(list)) return 'playlists must be an array'
+  if (list.length > MAX_PLAYLISTS) return 'Too many playlists'
+  const seen = new Set<string>()
+  for (const p of list as Record<string, unknown>[]) {
+    if (!p || typeof p !== 'object') return 'Invalid playlist'
+    if (typeof p.id !== 'string' || !PLAYLIST_ID_RE.test(p.id) || seen.has(p.id)) return 'Invalid playlist id'
+    seen.add(p.id)
+    if (typeof p.name !== 'string' || !p.name.trim() || p.name.length > MAX_PLAYLIST_NAME) {
+      return 'Invalid playlist name'
+    }
+    if (!Array.isArray(p.songIds) || p.songIds.length > MAX_PLAYLIST_SONGS) return 'Invalid songIds'
+    if (!p.songIds.every((s) => typeof s === 'string' && YOUTUBE_ID_RE.test(s))) return 'Invalid songIds'
+    for (const k of ['createdAt', 'updatedAt'] as const) {
+      if (!Number.isSafeInteger(p[k]) || (p[k] as number) < 0) return `Invalid ${k}`
+    }
+  }
+  return null
+}
+
+// Adding songs from the phone. The phone searches Deezer through the Worker
+// (no API key; 30-second previews) and marks songs; the desktop app, when open,
+// finds each marked song on YouTube with yt-dlp, downloads and uploads it, and
+// clears the mark. Recommendations (from the desktop) are marked by YouTube id.
+
+export const MAX_QUERY = 200
+export const MAX_REQUESTS = 500
+/** A marked song: its YouTube id, or "dz" + its Deezer id (found on YouTube later). */
+export const REQUEST_ID_RE = /^(?:[A-Za-z0-9_-]{11}|dz\d{1,20})$/
+export const deezerRequestId = (deezerId: string | number): string => `dz${deezerId}`
+
+export interface SearchHit {
+  /** YouTube id, or "dz" + Deezer id. */
+  id: string
+  title: string
+  artists: string
+  durationSec: number | null
+  coverUrl: string | null
+  deezerId: string | null
+  /** A 30-second clip (Deezer), when there is one. Not stored. */
+  previewUrl?: string | null
+}
+
+export interface SearchResponse {
+  /** inCloud: already in your library; requested: already marked. */
+  results: (SearchHit & { inCloud: boolean; requested: boolean })[]
+}
+
+export interface SongRequest extends SearchHit {
+  /** pending: waiting for the desktop; failed: the desktop couldn't get it (see error). */
+  status: 'pending' | 'failed'
+  error: string | null
+  createdAt: number
+}
+
+export interface ListRequestsResponse {
+  requests: SongRequest[]
+}
+
+/** Returns an error message, or null when the hit can be marked. */
+export function validateHit(h: unknown): string | null {
+  if (!h || typeof h !== 'object') return 'Invalid song'
+  const x = h as Record<string, unknown>
+  if (typeof x.id !== 'string' || !REQUEST_ID_RE.test(x.id)) return 'Invalid song id'
+  if (typeof x.title !== 'string' || !x.title.trim() || x.title.length > 300) return 'Invalid title'
+  if (typeof x.artists !== 'string' || x.artists.length > 500) return 'Invalid artists'
+  if (x.coverUrl != null && (typeof x.coverUrl !== 'string' || x.coverUrl.length > 1000)) return 'Invalid coverUrl'
+  if (x.deezerId != null && (typeof x.deezerId !== 'string' || !/^\d{1,20}$/.test(x.deezerId))) return 'Invalid deezerId'
+  const d = x.durationSec
+  if (d != null && (typeof d !== 'number' || !Number.isFinite(d) || d < 0)) return 'Invalid durationSec'
+  return null
+}
+
+// "Recomendado para ti" on the phone: the desktop computes it (YouTube mixes of
+// library songs, with yt-dlp) and uploads it; the phone shows it and marks songs.
+
+export const MAX_RECOMMENDATIONS = 60
+
+export interface PutRecommendationsRequest {
+  /** Titles of the library songs the suggestions came from. */
+  basedOn: string[]
+  results: SearchHit[]
+}
+
+export interface RecommendationsResponse {
+  basedOn: string[]
+  results: SearchResponse['results']
+  /** When the desktop last sent them; null = never. */
+  updatedAt: number | null
+}
+
+export function validateRecommendations(body: unknown): string | null {
+  const b = body as Partial<PutRecommendationsRequest> | null
+  if (!b || !Array.isArray(b.basedOn) || !Array.isArray(b.results)) return 'basedOn and results must be arrays'
+  if (b.basedOn.length > 20 || !b.basedOn.every((t) => typeof t === 'string' && t.length <= 300)) return 'Invalid basedOn'
+  if (b.results.length > MAX_RECOMMENDATIONS) return 'Too many results'
+  for (const h of b.results) {
+    const e = validateHit(h)
+    if (e) return e
+  }
+  return null
+}

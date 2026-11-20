@@ -13,47 +13,9 @@ export function searchArgs(query: string, limit = SEARCH_LIMIT): string[] {
   return ['--flat-playlist', '--dump-json', '--no-warnings', '--ignore-config', '--', `ytsearch${limit}:${query}`]
 }
 
-// "(Official Video)", "[Lyrics]", "(Video Oficial)", "(Audio)", "(HD)", "(Visualizer)"…
-const NOISE =
-  /\s*[([](?:official|oficial|video|vídeo|audio|lyrics?|letra|visualizer|hd|hq|4k|mv|music video)(?:[^)\]]*)[)\]]/gi
+import { cleanTitle, fold } from '../shared/title'
 
-const fold = (s: string): string =>
-  s
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-
-// "A, B", "A & B", "A feat. B", "A ft B", "A x B": a list of artists, not a song name.
-const ARTIST_LIST = /,|&|\s(?:feat\.?|ft\.?|x)\s/i
-
-/**
- * "Artist - Song (Official Video)" → { artists: "Artist", title: "Song" }.
- * Many channels write it the other way ("daño - Peso Pluma & Tito Double P"),
- * so the sides swap when the right one has the channel's name, or (no channel
- * to go by) when only the right one looks like a list of artists. With no dash,
- * the channel is the artist.
- */
-export function cleanTitle(raw: string, channel: string): { title: string; artists: string } {
-  const text = raw.replace(NOISE, '').replace(/\s+/g, ' ').trim() || raw.trim()
-  const ch = fold(channel.replace(/\s+-\s+Topic$/i, '').replace(/VEVO$/i, ''))
-  const dash = /^(.+?)\s+[-–—]\s+(.+)$/.exec(text)
-  if (dash) {
-    const [left, right] = [dash[1].trim(), dash[2].trim()]
-    // Whole words, so a channel named "x" doesn't match "remix".
-    const hasChannel = (s: string): boolean => !!ch && ` ${fold(s)} `.includes(` ${ch} `)
-    const swap = hasChannel(left)
-      ? false
-      : hasChannel(right) || (ARTIST_LIST.test(right) && !ARTIST_LIST.test(left))
-    return swap ? { artists: right, title: left } : { artists: left, title: right }
-  }
-  const artists = channel
-    .replace(/\s+-\s+Topic$/i, '')
-    .replace(/VEVO$/i, '')
-    .trim()
-  return { title: text, artists }
-}
+export { cleanTitle }
 
 interface FlatEntry {
   id?: unknown
@@ -243,4 +205,47 @@ export async function radioFor(
   return mergeMixes([mix], new Set([id, ...library.map((s) => s.id)]), MIX_ITEMS, (r) =>
     inLibraryByName(r, library)
   )
+}
+
+// ── Songs found on Deezer (marked on the phone) ──────────────────────────────
+// The phone searches Deezer; here we look for the same recording on YouTube to
+// download it: same title, a duration within a few seconds, and not a live /
+// cover / karaoke / sped-up version unless that's what was asked for.
+
+const VARIANT = /\b(live|en vivo|ao vivo|cover|karaoke|instrumental|remix|sped up|slowed|nightcore|8d|reverb)\b/i
+const MAX_DURATION_GAP = 12
+const bare = (s: string): string => fold(s.replace(/\([^)]*\)|\[[^\]]*\]/g, ' '))
+
+export function pickYoutubeMatch(
+  results: SearchResult[],
+  want: { title: string; artists: string; durationSec: number | null }
+): SearchResult | null {
+  const title = bare(want.title)
+  if (!title) return null
+  const artist = fold(want.artists.split(/,|&|\s(?:feat\.?|ft\.?|x)\s/i)[0] ?? '')
+  const wantedVariant = VARIANT.exec(want.title)?.[1]?.toLowerCase()
+  const ok = results.filter((r) => {
+    const text = ` ${fold(`${r.title} ${r.artists}`)} `
+    if (!text.includes(` ${title} `)) return false
+    const variant = VARIANT.exec(r.title)?.[1]?.toLowerCase()
+    if (variant && variant !== wantedVariant) return false
+    if (want.durationSec != null && r.durationSec != null && Math.abs(r.durationSec - want.durationSec) > MAX_DURATION_GAP) {
+      return false
+    }
+    return true
+  })
+  // The artist's own upload first (its channel, or named in the title); otherwise YouTube's order.
+  const byArtist = ok.find((r) => !!artist && ` ${fold(`${r.artists} ${r.title}`)} `.includes(` ${artist} `))
+  return byArtist ?? (artist ? null : (ok[0] ?? null))
+}
+
+/** The YouTube upload of a song found on Deezer; throws when there's no good match. */
+export async function findOnYoutube(
+  tools: Tools,
+  want: { title: string; artists: string; durationSec: number | null }
+): Promise<SearchResult> {
+  const hits = await searchYoutube(tools, `${want.artists} ${want.title}`)
+  const match = pickYoutubeMatch(hits, want)
+  if (!match) throw new Error('No encontré esta canción en YouTube')
+  return match
 }

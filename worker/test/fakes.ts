@@ -2,10 +2,10 @@
 // the real migration SQL runs) and an in-memory R2 bucket. Only the subset of
 // each API that src/app.ts uses is implemented.
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import type { Env } from '../src/env'
-import { createApp } from '../src/app'
+import { createApp, type AppOptions } from '../src/app'
 import type { Presigner } from '../src/presign'
 
 class FakeStatement {
@@ -33,9 +33,11 @@ class FakeStatement {
 export function createFakeD1(): D1Database {
   const db = new DatabaseSync(':memory:')
   db.exec('PRAGMA foreign_keys = ON')
-  db.exec(
-    readFileSync(fileURLToPath(new URL('../migrations/0001_init.sql', import.meta.url)), 'utf-8')
-  )
+  // Every migration, in order, like `wrangler d1 migrations apply`.
+  const dir = fileURLToPath(new URL('../migrations/', import.meta.url))
+  for (const f of readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()) {
+    db.exec(readFileSync(dir + f, 'utf-8'))
+  }
   return {
     prepare: (sql: string) => new FakeStatement(db, sql),
     async batch(stmts: FakeStatement[]) {
@@ -98,7 +100,7 @@ export interface Harness {
 /** Presigner stub: a recognizable fake URL instead of real S3 signing. */
 export const fakePresign: Presigner = async (method, key) => `https://r2.test/${method}/${key}`
 
-export function createHarness(): Harness {
+export function createHarness(opts: AppOptions = {}): Harness {
   const r2 = new FakeR2()
   const env: Env = {
     BUCKET: r2 as unknown as R2Bucket,
@@ -106,7 +108,7 @@ export function createHarness(): Harness {
     R2_BUCKET_NAME: 'vibes',
     API_TOKEN: TOKEN
   }
-  const app = createApp(fakePresign)
+  const app = createApp(fakePresign, opts)
   const call: Harness['call'] = (method, path, body, token = TOKEN) => {
     const headers: Record<string, string> = {}
     if (token !== null) headers.Authorization = `Bearer ${token}`

@@ -23,6 +23,8 @@ export interface SearchResult {
   artists: string
   durationSec: number | null
   coverUrl: string
+  /** Known when the song was found on Deezer (marked on the phone). */
+  deezerId?: string | null
 }
 
 /** Songs the library doesn't have yet, from YouTube mixes of a few of its songs. */
