@@ -6,6 +6,7 @@ import type { CloudSettingsInput, LocalSong, Recommendations, SearchResult, Song
 import { CloudClient } from './cloud/client'
 import { createPlaylistSync } from './cloud/playlist-sync'
 import { toCloudRecommendations } from './cloud/recommendations'
+import { importPhonePlays } from './cloud/plays'
 import { processRequests } from './cloud/requests'
 import { CloudSettingsStore } from './cloud/settings'
 import { startAudioServer } from './audio-server'
@@ -165,7 +166,7 @@ async function main(): Promise<void> {
   }
   ipcMain.handle('songs:add', (_e, result: SearchResult) => add(result))
 
-  // Songs marked on the phone: downloaded here while the app is open.
+  // Songs marked on the phone (downloaded here while the app is open), and its plays.
   const checkRequests = single(async () => {
     const active = await settings.active()
     if (!active) return
@@ -183,6 +184,9 @@ async function main(): Promise<void> {
       })
     })
     if (run.done || run.failed) console.log(`Canciones del celular: ${run.done} agregadas, ${run.failed} con error`)
+    // And what was listened to on the phone counts here too (for the recommendations).
+    const plays = await importPhonePlays(client, (id, at) => recordPlay(ctx, id, at))
+    if (plays) console.log(`Reproducciones del celular: ${plays}`)
   })
   const checkRequestsQuietly = (): void => void checkRequests().catch(() => {}) // offline: next time
   setInterval(checkRequestsQuietly, REQUESTS_EVERY_MS)

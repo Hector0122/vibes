@@ -6,6 +6,7 @@ import {
   type ApiError,
   type CloudSong,
   type ListPlaylistsResponse,
+  type ListPlaysResponse,
   type ListRequestsResponse,
   type PutRecommendationsRequest,
   type ListSongsResponse,
@@ -125,6 +126,15 @@ export class CloudClient {
   /** Songs marked on the phone, waiting to be downloaded here. */
   listRequests(): Promise<ListRequestsResponse> {
     return this.api('GET', '/requests')
+  }
+
+  /** Plays counted on the phone, not yet counted here. */
+  listPlays(): Promise<ListPlaysResponse> {
+    return this.api('GET', '/plays')
+  }
+
+  async ackPlays(upTo: number): Promise<void> {
+    await this.api('POST', '/plays/ack', { upTo })
   }
 
   async putRecommendations(req: PutRecommendationsRequest): Promise<void> {

@@ -13,6 +13,7 @@ import {
   type Prefs
 } from './src/offline'
 import { onWifi } from './src/network'
+import { flushPlays } from './src/plays'
 import { LibraryScreen, type DownloadState } from './src/screens/LibraryScreen'
 import { NowPlayingScreen } from './src/screens/NowPlayingScreen'
 import { SearchScreen } from './src/screens/SearchScreen'
@@ -91,6 +92,7 @@ export default function App(): React.JSX.Element {
       setPlaylists(lists)
       setRequests(marked)
       setOffline(false)
+      void flushPlays().catch(() => {}) // what was listened to offline
       void saveSnapshot({ songs: list, playlists: lists, savedAt: Date.now() }).catch(() => {})
     } catch (e) {
       if (e instanceof CloudError && e.status === 0) setOffline(true)

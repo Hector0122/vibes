@@ -12,9 +12,12 @@ import {
   validateHit,
   validateRecommendations,
   validatePlaylists,
+  validatePlays,
   type ApiError,
   type CloudPlaylist,
   type ListPlaylistsResponse,
+  type ListPlaysResponse,
+  type PostPlaysRequest,
   type PutPlaylistsRequest,
   type CloudSong,
   type ListRequestsResponse,
@@ -343,6 +346,34 @@ export function createApp(presign: Presigner, opts: AppOptions = {}): App {
     return { deleted: true }
   }
 
+  async function addPlays(env: Env, request: Request): Promise<{ added: number }> {
+    const body = await readJson<PostPlaysRequest>(request)
+    const invalid = validatePlays(body)
+    if (invalid) fail(400, invalid)
+    if (body.plays.length) {
+      await env.DB.batch(
+        body.plays.map((p) => env.DB.prepare('INSERT INTO plays (id, played_at) VALUES (?, ?)').bind(p.id, p.at))
+      )
+    }
+    return { added: body.plays.length }
+  }
+
+  async function listPlays(env: Env): Promise<ListPlaysResponse> {
+    const { results } = await env.DB.prepare('SELECT seq, id, played_at FROM plays ORDER BY seq LIMIT 1000').all<{
+      seq: number
+      id: string
+      played_at: number
+    }>()
+    return { plays: results.map((r) => ({ seq: r.seq, id: r.id, at: r.played_at })) }
+  }
+
+  async function ackPlays(env: Env, request: Request): Promise<{ ok: true }> {
+    const body = await readJson<{ upTo?: unknown }>(request)
+    if (!Number.isSafeInteger(body?.upTo)) fail(400, 'Invalid upTo')
+    await env.DB.prepare('DELETE FROM plays WHERE seq <= ?').bind(body.upTo).run()
+    return { ok: true }
+  }
+
   async function route(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
     if (!url.pathname.startsWith(API_PREFIX + '/')) fail(404, 'Not found')
@@ -354,6 +385,9 @@ export function createApp(presign: Presigner, opts: AppOptions = {}): App {
     if (path === '/playlists' && method === 'GET') return json(await listPlaylists(env))
     if (path === '/playlists' && method === 'PUT') return json(await putPlaylists(env, request))
     if (path === '/playlists') return fail(405, 'Method not allowed')
+    if (path === '/plays' && method === 'POST') return json(await addPlays(env, request))
+    if (path === '/plays' && method === 'GET') return json(await listPlays(env))
+    if (path === '/plays/ack' && method === 'POST') return json(await ackPlays(env, request))
     if (path === '/search' && method === 'GET') return json(await search(env, url))
     if (path === '/recommendations' && method === 'GET') return json(await getRecommendations(env))
     if (path === '/recommendations' && method === 'PUT') return json(await putRecommendations(env, request))

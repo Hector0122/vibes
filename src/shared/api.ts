@@ -212,3 +212,31 @@ export function validateRecommendations(body: unknown): string | null {
   }
   return null
 }
+
+// Plays counted on the phone (a song listened to for 30 s), passed to the desktop.
+export const MAX_PLAYS_PER_POST = 500
+
+export interface Play {
+  id: string
+  /** When it was listened to (ms). */
+  at: number
+}
+
+export interface PostPlaysRequest {
+  plays: Play[]
+}
+
+export interface ListPlaysResponse {
+  /** seq: pass the highest one to /plays/ack once they're counted. */
+  plays: (Play & { seq: number })[]
+}
+
+export function validatePlays(body: unknown): string | null {
+  const list = (body as { plays?: unknown } | null)?.plays
+  if (!Array.isArray(list) || list.length > MAX_PLAYS_PER_POST) return 'Invalid plays'
+  for (const p of list as Record<string, unknown>[]) {
+    if (!p || typeof p.id !== 'string' || !YOUTUBE_ID_RE.test(p.id)) return 'Invalid song id'
+    if (!Number.isSafeInteger(p.at) || (p.at as number) <= 0) return 'Invalid at'
+  }
+  return null
+}

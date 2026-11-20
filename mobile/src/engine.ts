@@ -16,9 +16,10 @@ import {
   type AudioPlaylistStatus
 } from 'expo-audio'
 import type { CloudSong } from '../../src/shared/api'
-import { pickNext, pickPrev, remember } from '../../src/shared/queue'
+import { isListened, pickNext, pickPrev, remember } from '../../src/shared/queue'
 import type { Cloud } from './cloud'
 import * as store from './offline'
+import { recordPlay, setPlaysCloud } from './plays'
 
 /** Signed URLs last 15 min; after a long pause a streamed song gets a fresh one. */
 const STALE_AFTER_MS = 10 * 60_000
@@ -67,6 +68,8 @@ export class Engine {
   private needsLoad = false
   private resumeAt = 0
   private lastSave = 0
+  /** The token of the last song whose play was counted (once per time it plays). */
+  private countedToken = 0
   private listeners = new Set<() => void>()
   state: PlayerState = {
     current: null,
@@ -95,6 +98,7 @@ export class Engine {
 
   configure(cloud: Cloud | null): void {
     this.cloud = cloud
+    setPlaysCloud(cloud)
   }
 
   /** The list "next" and "previous" walk through (what the screen shows). */
@@ -266,6 +270,11 @@ export class Engine {
       this.pl?.pause()
       this.set({ sleep: null })
     }
+    const cur = this.state.current
+    if (cur && this.countedToken !== this.currentToken && isListened(s.currentTime, s.duration)) {
+      this.countedToken = this.currentToken
+      void recordPlay(cur.id, this.now()).catch(() => {})
+    }
     this.set({
       playing: s.playing,
       time: s.currentTime,
@@ -401,6 +410,8 @@ export class Engine {
   /** Back to nothing playing (tests; or a different cloud). */
   reset(): void {
     this.pl?.clear()
+    this.pl?.destroy()
+    this.pl = null
     this.items = []
     this.queue = []
     this.bag = []

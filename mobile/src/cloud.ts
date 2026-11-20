@@ -9,6 +9,7 @@ import {
   type ListPlaylistsResponse,
   type ListRequestsResponse,
   type ListSongsResponse,
+  type Play,
   type RecommendationsResponse,
   type SearchHit,
   type SearchResponse,
@@ -38,6 +39,8 @@ export interface Cloud {
   /** Marks a song for the computer to download. */
   request(hit: SearchHit): Promise<SongRequest>
   cancelRequest(id: string): Promise<void>
+  /** Plays counted here, for the computer's counts. */
+  sendPlays(plays: Play[]): Promise<void>
   /** A signed R2 URL, valid for 15 minutes. */
   streamUrl(id: string): Promise<string>
 }
@@ -125,6 +128,7 @@ export function createCloud(opts: {
       }),
     cancelRequest: (id) =>
       call<unknown>(`/requests/${encodeURIComponent(id)}`, 'DELETE').then(() => undefined),
+    sendPlays: (plays) => call<unknown>('/plays', 'POST', { plays }).then(() => undefined),
     streamUrl: (id) =>
       call<StreamResponse>(`/songs/${encodeURIComponent(id)}/stream`).then((r) => r.url)
   }

@@ -1,6 +1,7 @@
 // The player engine on its own: picking up where you left off, and the sleep timer.
 import type { CloudSong } from '../../../src/shared/api'
 import { Engine } from '../engine'
+import { flushPlays } from '../plays'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const audio = require('expo-audio') as typeof import('../../__mocks__/expo-audio')
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -27,7 +28,8 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
 
 let clock = 1_000_000
 let e: Engine
-beforeEach(() => {
+beforeEach(async () => {
+  await new Promise((r) => setTimeout(r, 10)) // let the previous test's file writes land first
   audio.mockPlaylistReset()
   fs.mockFsReset()
   for (const s of [A, B, C]) fs.mockDisk.set(`file:///docs/vibes/songs/${s.id}.m4a`, 'x') // all downloaded
@@ -98,4 +100,30 @@ it('turning shuffle on replaces what was queued next', async () => {
   await flush()
   expect(audio.mockPlaylist.uris).toHaveLength(2)
   expect(audio.mockPlaylist.remove).toHaveBeenCalledWith(1)
+})
+
+it('a song listened to for 30 s counts one play, sent to the cloud (kept while offline)', async () => {
+  const sent: unknown[] = []
+  let online = false
+  e.configure({
+    sendPlays: async (plays: unknown[]) => {
+      if (!online) throw new Error('offline')
+      sent.push(...plays)
+    }
+  } as never)
+  await e.play('aaaaaaaaaaa')
+  audio.mockPlaylistStatus({ currentTime: 10, duration: 200 })
+  audio.mockPlaylistStatus({ currentTime: 31, duration: 200 })
+  audio.mockPlaylistStatus({ currentTime: 45, duration: 200 }) // still the same play
+  await flush()
+  await flush()
+  expect(sent).toEqual([])
+  expect(JSON.parse(fs.mockDisk.get('file:///docs/vibes/plays.json')!)).toEqual([
+    { id: 'aaaaaaaaaaa', at: clock }
+  ])
+
+  online = true
+  expect(await flushPlays()).toBe(1)
+  expect(sent).toEqual([{ id: 'aaaaaaaaaaa', at: clock }])
+  expect(JSON.parse(fs.mockDisk.get('file:///docs/vibes/plays.json')!)).toEqual([])
 })

@@ -138,6 +138,7 @@ export const mockPlaylist = {
   }),
   setActiveForLockScreen: jest.fn(),
   updateLockScreenMetadata: jest.fn(),
+  destroy: jest.fn(),
   addListener: jest.fn((event: string, l: PlListener) => {
     plListeners[event]?.add(l)
     return { remove: () => plListeners[event]?.delete(l) }
@@ -159,6 +160,8 @@ export function mockPlaylistStatus(patch: Partial<PlStatus>): void {
 }
 
 export function mockPlaylistReset(): void {
+  plListeners.playlistStatusUpdate.clear()
+  plListeners.trackChanged.clear()
   mockPlaylist.uris = []
   mockPlaylist.currentIndex = 0
   mockPlaylist.played = []
