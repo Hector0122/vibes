@@ -212,3 +212,101 @@ export function validateRecommendations(body: unknown): string | null {
   }
   return null
 }
+
+// Plays counted on the phone (a song listened to for 30 s), passed to the desktop.
+export const MAX_PLAYS_PER_POST = 500
+
+export interface Play {
+  id: string
+  /** When it was listened to (ms). */
+  at: number
+}
+
+export interface PostPlaysRequest {
+  plays: Play[]
+}
+
+export interface ListPlaysResponse {
+  /** seq: pass the highest one to /plays/ack once they're counted. */
+  plays: (Play & { seq: number })[]
+}
+
+export function validatePlays(body: unknown): string | null {
+  const list = (body as { plays?: unknown } | null)?.plays
+  if (!Array.isArray(list) || list.length > MAX_PLAYS_PER_POST) return 'Invalid plays'
+  for (const p of list as Record<string, unknown>[]) {
+    if (!p || typeof p.id !== 'string' || !YOUTUBE_ID_RE.test(p.id)) return 'Invalid song id'
+    if (!Number.isSafeInteger(p.at) || (p.at as number) <= 0) return 'Invalid at'
+  }
+  return null
+}
+
+// Playlist edits made on the phone. The cloud applies them right away (so the
+// phone sees them) and keeps them until the desktop, the playlists' owner,
+// applies them too; the desktop always takes them before sending its own set.
+export type PlaylistOp =
+  | { type: 'create'; id: string; name: string }
+  | { type: 'rename'; id: string; name: string }
+  | { type: 'delete'; id: string }
+  | { type: 'add'; id: string; songIds: string[] }
+  | { type: 'remove'; id: string; songId: string }
+
+export interface PostPlaylistOpsRequest {
+  ops: PlaylistOp[]
+}
+
+export interface ListPlaylistOpsResponse {
+  ops: (PlaylistOp & { seq: number })[]
+}
+
+export const MAX_OPS_PER_POST = 100
+
+export function validatePlaylistOps(body: unknown): string | null {
+  const list = (body as { ops?: unknown } | null)?.ops
+  if (!Array.isArray(list) || list.length === 0 || list.length > MAX_OPS_PER_POST) return 'Invalid ops'
+  const name = (n: unknown): boolean => typeof n === 'string' && !!n.trim() && n.length <= MAX_PLAYLIST_NAME
+  const song = (s: unknown): boolean => typeof s === 'string' && YOUTUBE_ID_RE.test(s)
+  for (const o of list as Record<string, unknown>[]) {
+    if (!o || typeof o.id !== 'string' || !PLAYLIST_ID_RE.test(o.id)) return 'Invalid playlist id'
+    switch (o.type) {
+      case 'create':
+      case 'rename':
+        if (!name(o.name)) return 'Invalid playlist name'
+        break
+      case 'delete':
+        break
+      case 'add':
+        if (!Array.isArray(o.songIds) || o.songIds.length === 0 || o.songIds.length > 1000 || !o.songIds.every(song)) {
+          return 'Invalid songIds'
+        }
+        break
+      case 'remove':
+        if (!song(o.songId)) return 'Invalid songId'
+        break
+      default:
+        return 'Invalid op'
+    }
+  }
+  return null
+}
+
+/** Applies one op to a list of playlists (the cloud's copy, or the phone's while it waits). */
+export function applyPlaylistOp(list: CloudPlaylist[], op: PlaylistOp, now: number): CloudPlaylist[] {
+  const touch = (p: CloudPlaylist, patch: Partial<CloudPlaylist>): CloudPlaylist => ({ ...p, ...patch, updatedAt: now })
+  switch (op.type) {
+    case 'create':
+      return list.some((p) => p.id === op.id)
+        ? list
+        : [...list, { id: op.id, name: op.name.trim(), songIds: [], createdAt: now, updatedAt: now }]
+    case 'rename':
+      return list.map((p) => (p.id === op.id ? touch(p, { name: op.name.trim() }) : p))
+    case 'delete':
+      return list.filter((p) => p.id !== op.id)
+    case 'add':
+      return list.map((p) =>
+        p.id === op.id ? touch(p, { songIds: [...p.songIds, ...[...new Set(op.songIds)].filter((s) => !p.songIds.includes(s))] }) : p
+      )
+    case 'remove':
+      return list.map((p) => (p.id === op.id ? touch(p, { songIds: p.songIds.filter((s) => s !== op.songId) }) : p))
+  }
+}

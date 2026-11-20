@@ -7,6 +7,8 @@ import type { CloudClient } from './client'
 
 export interface PlaylistSyncOptions {
   list: () => Playlist[]
+  /** Takes in the phone's edits first (they must not be overwritten). */
+  pull?: (client: CloudClient) => Promise<unknown>
   /** null when the cloud isn't set up. */
   client: () => Promise<CloudClient | null>
   delayMs?: number
@@ -29,6 +31,7 @@ export function createPlaylistSync(opts: PlaylistSyncOptions): PlaylistSync {
     try {
       const client = await opts.client()
       if (!client) return false
+      await opts.pull?.(client)
       await client.putPlaylists({ playlists: opts.list() })
       return true
     } catch (err) {

@@ -1,18 +1,38 @@
 import { StatusBar } from 'expo-status-bar'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ActivityIndicator, Alert, Linking, StyleSheet, View } from 'react-native'
-import type { CloudPlaylist, CloudSong, SongRequest } from '../src/shared/api'
+import {
+  applyPlaylistOp,
+  type CloudPlaylist,
+  type CloudSong,
+  type PlaylistOp,
+  type SongRequest
+} from '../src/shared/api'
 import { CloudError, createCloud, type Cloud } from './src/cloud'
+import { ActionSheet, type Action } from './src/components/ActionSheet'
+import { NameDialog } from './src/components/NameDialog'
 import { PlayerBar } from './src/components/PlayerBar'
-import { loadSnapshot, saveSnapshot } from './src/offline'
+import {
+  DEFAULT_PREFS,
+  loadPrefs,
+  loadSnapshot,
+  savePrefs,
+  saveSnapshot,
+  type Prefs
+} from './src/offline'
+import { onWifi } from './src/network'
+import { flushPlays } from './src/plays'
 import { LibraryScreen, type DownloadState } from './src/screens/LibraryScreen'
+import { NowPlayingScreen } from './src/screens/NowPlayingScreen'
 import { SearchScreen } from './src/screens/SearchScreen'
 import { SettingsScreen } from './src/screens/SettingsScreen'
 import { loadSettings, saveSettings, type CloudSettings } from './src/settings'
 import { colors } from './src/theme'
 import { checkForUpdate } from './src/updates'
 import { useOffline } from './src/useOffline'
+import { engine } from './src/engine'
 import { usePlayer } from './src/usePlayer'
+import { startWidgetSync } from './src/widget/sync'
 
 export default function App(): React.JSX.Element {
   // undefined = still reading secure storage; null = not set up yet.
@@ -29,6 +49,19 @@ export default function App(): React.JSX.Element {
   const [onlyDownloaded, setOnlyDownloaded] = useState(false)
   const [requests, setRequests] = useState<SongRequest[]>([])
   const [searching, setSearching] = useState(false)
+  const [nowOpen, setNowOpen] = useState(false)
+  /** Open menus / dialogs: a song's menu, the playlist's menu, a name prompt. */
+  const [sheet, setSheet] = useState<{
+    title: string
+    subtitle?: string
+    actions: Action[]
+  } | null>(null)
+  const [naming, setNaming] = useState<{
+    title: string
+    initial?: string
+    save: (name: string) => void
+  } | null>(null)
+  const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS)
 
   const cloud: Cloud | null = useMemo(() => {
     if (!settings) return null
@@ -40,7 +73,10 @@ export default function App(): React.JSX.Element {
   }, [settings])
 
   const downloads = useOffline(cloud)
-  const player = usePlayer(cloud, queue, downloads.localUri)
+  const player = usePlayer(cloud, queue)
+
+  // The home screen widget follows the player.
+  useEffect(() => startWidgetSync(), [])
 
   // A newer APK on GitHub: offer it (Android asks before installing).
   useEffect(() => {
@@ -55,6 +91,7 @@ export default function App(): React.JSX.Element {
 
   useEffect(() => {
     loadSettings().then(setSettings)
+    loadPrefs().then(setPrefs, () => {})
     // The last library seen, so the app opens (and plays downloads) without internet.
     loadSnapshot().then((s) => {
       if (!s) return
@@ -78,6 +115,7 @@ export default function App(): React.JSX.Element {
       setPlaylists(lists)
       setRequests(marked)
       setOffline(false)
+      void flushPlays().catch(() => {}) // what was listened to offline
       void saveSnapshot({ songs: list, playlists: lists, savedAt: Date.now() }).catch(() => {})
     } catch (e) {
       if (e instanceof CloudError && e.status === 0) setOffline(true)
@@ -91,10 +129,59 @@ export default function App(): React.JSX.Element {
     void refresh()
   }, [refresh])
 
+  const updatePrefs = (patch: Partial<Prefs>): void => {
+    setPrefs((p) => {
+      const next = { ...p, ...patch }
+      void savePrefs(next).catch(() => {})
+      return next
+    })
+  }
+
+  // Kept playlists: whatever they have that isn't on the phone yet is downloaded
+  // (new songs too, after each refresh), on Wi-Fi only if so set.
+  const { download } = downloads
+  useEffect(() => {
+    if (offline || !downloadsReady || prefs.keep.length === 0 || songs.length === 0) return
+    const byIdNow = new Map(songs.map((s) => [s.id, s]))
+    const wanted = playlists
+      .filter((p) => prefs.keep.includes(p.id))
+      .flatMap((p) => p.songIds.map((id) => byIdNow.get(id)).filter((s): s is CloudSong => !!s))
+    if (wanted.length === 0) return
+    let cancelled = false
+    void (async () => {
+      if (prefs.wifiOnly && !(await onWifi())) return
+      if (!cancelled) download(wanted)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [offline, downloadsReady, prefs, songs, playlists, download])
+
+  /** Manual downloads: on mobile data with "solo Wi-Fi" on, ask first. */
+  const downloadAsked = async (list: CloudSong[]): Promise<void> => {
+    if (!prefs.wifiOnly || (await onWifi())) {
+      download(list)
+      return
+    }
+    Alert.alert(
+      'Estás usando datos móviles',
+      '¿Descargar de todos modos? Puede gastar tu plan de datos.',
+      [
+        { text: 'Esperar a Wi-Fi', style: 'cancel' },
+        { text: 'Descargar', onPress: () => download(list) }
+      ]
+    )
+  }
+
   // Songs deleted from the cloud don't keep taking space on the phone.
   useEffect(() => {
     if (downloadsReady && !offline && !loading && songs.length > 0) prune(songs.map((s) => s.id))
   }, [downloadsReady, offline, loading, songs, prune])
+
+  // Last time's song, paused where it was (once the library is known).
+  useEffect(() => {
+    if (songs.length) void engine.restore(songs)
+  }, [songs])
 
   // A playlist deleted on the computer: back to all songs.
   useEffect(() => {
@@ -144,6 +231,95 @@ export default function App(): React.JSX.Element {
     )
   }
 
+  /** Edits a playlist: shown right away, sent to the cloud (the computer takes it from there). */
+  const editPlaylists = async (ops: PlaylistOp[]): Promise<void> => {
+    if (!cloud) return
+    const before = playlists
+    setPlaylists((list) => ops.reduce((l, op) => applyPlaylistOp(l, op, Date.now()), list))
+    try {
+      const now = await cloud.editPlaylists(ops)
+      setPlaylists(now)
+      void saveSnapshot({ songs, playlists: now, savedAt: Date.now() }).catch(() => {})
+    } catch (e) {
+      setPlaylists(before)
+      setError(
+        (e as { status?: number }).status === 0
+          ? 'Necesitas internet para editar las playlists'
+          : (e as Error).message
+      )
+    }
+  }
+  const newPlaylistId = (): string =>
+    Array.from({ length: 12 }, () => Math.floor(Math.random() * 16).toString(16)).join('')
+
+  const askNewPlaylist = (withSong?: CloudSong): void =>
+    setNaming({
+      title: 'Nueva playlist',
+      save: (name) => {
+        const id = newPlaylistId()
+        const ops: PlaylistOp[] = [{ type: 'create', id, name }]
+        if (withSong) ops.push({ type: 'add', id, songIds: [withSong.id] })
+        void editPlaylists(ops)
+      }
+    })
+
+  const songMenu = (s: CloudSong): void => {
+    const actions: Action[] = playlists
+      .filter((p) => !p.songIds.includes(s.id))
+      .map((p) => ({
+        label: `Agregar a «${p.name}»`,
+        onPress: () => void editPlaylists([{ type: 'add', id: p.id, songIds: [s.id] }])
+      }))
+    actions.push({ label: 'Agregar a una playlist nueva…', onPress: () => askNewPlaylist(s) })
+    if (selected) {
+      actions.unshift({
+        label: `Quitar de «${selected.name}»`,
+        destructive: true,
+        onPress: () => void editPlaylists([{ type: 'remove', id: selected.id, songId: s.id }])
+      })
+    }
+    setSheet({ title: s.title, subtitle: s.artists, actions })
+  }
+
+  const playlistMenu = (): void => {
+    const pl = selected
+    if (!pl) return
+    setSheet({
+      title: pl.name,
+      actions: [
+        {
+          label: 'Renombrar',
+          onPress: () =>
+            setNaming({
+              title: 'Renombrar playlist',
+              initial: pl.name,
+              save: (name) => void editPlaylists([{ type: 'rename', id: pl.id, name }])
+            })
+        },
+        {
+          label: 'Eliminar playlist',
+          destructive: true,
+          onPress: () =>
+            Alert.alert(
+              'Eliminar playlist',
+              `¿Eliminar «${pl.name}»? Las canciones siguen en tu biblioteca.`,
+              [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                  text: 'Eliminar',
+                  style: 'destructive',
+                  onPress: () => {
+                    setPlaylistId(null)
+                    void editPlaylists([{ type: 'delete', id: pl.id }])
+                  }
+                }
+              ]
+            )
+        }
+      ]
+    })
+  }
+
   const retryRequest = async (r: SongRequest): Promise<void> => {
     if (!cloud) return
     try {
@@ -166,7 +342,9 @@ export default function App(): React.JSX.Element {
   return (
     <View style={styles.root}>
       <StatusBar style="light" />
-      {searching && cloud ? (
+      {nowOpen && player.current ? (
+        <NowPlayingScreen player={player} onClose={() => setNowOpen(false)} />
+      ) : searching && cloud ? (
         <SearchScreen
           cloud={cloud}
           onClose={() => {
@@ -201,17 +379,48 @@ export default function App(): React.JSX.Element {
           onlyDownloaded={onlyDownloaded}
           onToggleOnlyDownloaded={() => setOnlyDownloaded((v) => !v)}
           downloadState={downloadState}
-          onDownload={downloads.download}
+          onDownload={(list) => void downloadAsked(list)}
+          keepDownloaded={!!selected && prefs.keep.includes(selected.id)}
+          onToggleKeep={() =>
+            selected &&
+            updatePrefs({
+              keep: prefs.keep.includes(selected.id)
+                ? prefs.keep.filter((x) => x !== selected.id)
+                : [...prefs.keep, selected.id]
+            })
+          }
+          wifiOnly={prefs.wifiOnly}
+          onToggleWifiOnly={() => updatePrefs({ wifiOnly: !prefs.wifiOnly })}
           onRemoveDownload={(s) => downloads.remove([s.id])}
           progress={downloads.progress}
           onCancelDownloads={downloads.cancel}
           onOpenSearch={() => setSearching(true)}
+          onSongMenu={songMenu}
+          onNewPlaylist={() => askNewPlaylist()}
+          onPlaylistMenu={playlistMenu}
           requests={requests}
           onCancelRequest={(r) => void cancelRequest(r)}
           onRetryRequest={(r) => void retryRequest(r)}
         />
       )}
-      <PlayerBar player={player} />
+      <PlayerBar player={player} onOpen={() => setNowOpen(true)} />
+      <ActionSheet
+        visible={!!sheet}
+        title={sheet?.title ?? ''}
+        subtitle={sheet?.subtitle}
+        actions={sheet?.actions ?? []}
+        onClose={() => setSheet(null)}
+      />
+      <NameDialog
+        visible={!!naming}
+        title={naming?.title ?? ''}
+        initial={naming?.initial}
+        onCancel={() => setNaming(null)}
+        onSave={(name) => {
+          naming?.save(name)
+          setNaming(null)
+        }}
+      />
     </View>
   )
 }

@@ -164,3 +164,37 @@ describe('playlists', () => {
     expect((await h.call('PUT', '/v1/playlists', { playlists: [] }, 'nope')).status).toBe(401)
   })
 })
+
+describe('playlist edits from the phone', () => {
+  const pl = (id: string, name: string, songIds: string[]) => ({ id, name, songIds, createdAt: 1, updatedAt: 2 })
+  type Lists = { playlists: { id: string; name: string; songIds: string[] }[] }
+
+  it('applied to the cloud right away (the phone sees them) and kept for the desktop until it confirms', async () => {
+    await h.call('PUT', '/v1/playlists', { playlists: [pl('a', 'Noche', [SONG_ID])] })
+    const res = await h.call('POST', '/v1/playlists/ops', {
+      ops: [
+        { type: 'create', id: 'phone1', name: 'Gym' },
+        { type: 'add', id: 'phone1', songIds: [SONG_ID, 'aaaaaaaaaaa', SONG_ID] },
+        { type: 'rename', id: 'a', name: 'Noche tranquila' },
+        { type: 'remove', id: 'a', songId: SONG_ID }
+      ]
+    })
+    expect(res.status).toBe(200)
+    const now = ((await (await h.call('GET', '/v1/playlists')).json()) as Lists).playlists
+    expect(now.map((p) => [p.id, p.name, p.songIds])).toEqual([
+      ['a', 'Noche tranquila', []],
+      ['phone1', 'Gym', [SONG_ID, 'aaaaaaaaaaa']]
+    ])
+    const ops = (await (await h.call('GET', '/v1/playlists/ops')).json()) as { ops: { seq: number; type: string }[] }
+    expect(ops.ops.map((o) => o.type)).toEqual(['create', 'add', 'rename', 'remove'])
+    await h.call('POST', '/v1/playlists/ops/ack', { upTo: ops.ops[3].seq })
+    expect(await (await h.call('GET', '/v1/playlists/ops')).json()).toEqual({ ops: [] })
+  })
+
+  it('rejects invalid edits without applying any', async () => {
+    for (const ops of [[], [{ type: 'create', id: 'x', name: '' }], [{ type: 'add', id: 'x', songIds: ['nope'] }], [{ type: 'boom', id: 'x' }]]) {
+      expect((await h.call('POST', '/v1/playlists/ops', { ops })).status).toBe(400)
+    }
+    expect(await (await h.call('GET', '/v1/playlists')).json()).toEqual({ playlists: [] })
+  })
+})

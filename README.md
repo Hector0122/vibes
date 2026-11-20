@@ -17,12 +17,13 @@ En **[Releases](../../releases)** de GitHub, cada versión (`v1.0.0`, …) trae:
 - `vibes-<versión>.apk` → Android (permite apps de "fuentes desconocidas"); también corre en Waydroid:
   `waydroid app install vibes-*.apk`
 
-Para sacar una versión: sube el número en `package.json` y `mobile/app.json`, y publica una etiqueta
-`git tag -a vX.Y.Z -m "Vibes X.Y.Z" && git push origin vX.Y.Z`. GitHub Actions corre todas las pruebas,
-arma los instaladores y crea la release (~25 min, la APK es lo más lento). Cada push a `main` también deja
-los instaladores como *Artifacts* de la corrida.
+Para sacar una versión: sube el número en `package.json` y `mobile/app.json` (y `versionCode`), y publica una
+etiqueta `git tag -a vX.Y.Z -m "Vibes X.Y.Z" && git push origin vX.Y.Z`, o desde GitHub (también en el
+celular): **Actions → CI → Run workflow** en `main` con la versión. La app del celular avisa sola de la nueva. GitHub Actions corre todas las pruebas,
+arma los instaladores y crea la release (~25 min, la APK es lo más lento). El CI corre **solo** al publicar
+una versión, no en cada push ni en los PR: corre las pruebas localmente antes (ver *Desarrollo*).
 
-## Qué hace hoy (v1.1)
+## Qué hace hoy (v1.2)
 
 **Escritorio (Electron)**
 
@@ -39,18 +40,33 @@ los instaladores como *Artifacts* de la corrida.
 - **Reproduciendo ahora**: clic en la canción del reproductor → portada grande y **letra sincronizada**
   (LRCLIB; se guarda en disco).
 - **Herramientas**: importar de eSound (solo con la biblioteca vacía), descargar faltantes, subir a la nube.
-- Cuenta reproducciones (a los 30 s) para afinar las recomendaciones.
+- Cuenta reproducciones (a los 30 s) para afinar las recomendaciones, también las del celular.
+- Con la nube configurada: descarga lo que marcas en el celular, sube sus playlists y sugerencias, y aplica
+  las playlists que editas en el celular (revisa cada 2 minutos).
 
 **Celular (`mobile/`, Expo)**
 
-- Escucha tu nube: lista, búsqueda, aleatorio, reproducción automática, sigue sonando con la pantalla
-  apagada y muestra la canción en la pantalla bloqueada. La primera vez pide la URL del Worker y tu token
-  (el de `~/.config/vibes/api_token`); se guardan en el almacén seguro del teléfono.
-- **Playlists**: las que armas en la computadora aparecen arriba como pestañas (se suben solas a la nube
-  cada vez que cambian).
+- Escucha tu nube: lista, búsqueda, aleatorio y reproducción automática con el **reproductor nativo de
+  Android**: la siguiente canción ya está cargada, así sigue sonando con la pantalla apagada, y la pantalla
+  bloqueada tiene ⏮ ⏯ ⏭. La primera vez pide la URL del Worker y tu token (el de
+  `~/.config/vibes/api_token`); se guardan en el almacén seguro del teléfono.
+- **Sigue donde te quedaste**: al abrir aparece la última canción, en pausa, en el mismo segundo.
+- **Temporizador** (🌙 en el reproductor): parar en 15/30/45/60 min o al terminar la canción.
+- **Reproduciendo**: toca la canción en la barra → portada grande y **letra sincronizada** (LRCLIB; se guarda
+  para verla sin internet; toca una línea para ir ahí).
+- **Widget** en la pantalla de inicio (mantén presionado el fondo → Widgets → Vibes): canción actual y
+  ⏮ ▶/⏸ ⏭ sin abrir la app. Con la app cerrada toca **solo lo descargado** (sin internet): retoma tu última
+  canción si está descargada, si no, aleatorio de las descargadas.
+- **Playlists**: las de la computadora aparecen arriba como pestañas. En el celular: **+ Nueva**, deja
+  presionada una canción para agregarla a una playlist o quitarla, y ⋯ para renombrar o eliminar (necesita
+  internet; la compu recibe los cambios).
+- **Mantener descargada** una playlist: baja sola lo que le falte, también las canciones nuevas.
+  **Descargar solo con Wi-Fi** (activado): lo automático espera al Wi-Fi y una descarga a mano con datos
+  pregunta antes.
 - **Sin internet**: ⬇ en cada canción, o "Descargar las N" para toda la lista o playlist. Las descargadas
   suenan desde el teléfono; sin conexión la app abre con tu última biblioteca y solo muestra lo descargado.
   El botón 📱 filtra a "solo descargadas"; ✓ quita una del teléfono (sigue en la nube).
+- Lo que escuchas 30 s cuenta para las sugerencias (se manda a la compu; sin internet, después).
 - **Agregar música** (➕ arriba): busca en Deezer (sin API key) o elige de "Recomendado para ti"; ▶ suena
   un clip de 30 s. Toca **Agregar** y la canción queda en "Esperando a la compu": la próxima vez que Vibes esté
   abierto en la computadora (revisa cada 2 minutos) la busca en YouTube, la descarga con yt-dlp, la sube y
@@ -60,14 +76,15 @@ los instaladores como *Artifacts* de la corrida.
 
 ### Pendiente / siguiente
 
-- **⚠️ Actualizar la nube (en la laptop):** la 1.1.0 trae cambios en el Worker que aún no están desplegados.
-  Desde `worker/`: `git pull` y luego `pnpm migrate:remote && pnpm deploy` (misma sesión de `wrangler login`;
-  la URL y el token de la app no cambian). Hasta entonces el celular funciona, pero sin playlists, sin
-  "Agregar música" y sin sugerencias. Opcional: conectar el repo en Cloudflare (Worker → Settings → Build)
-  para que se despliegue solo como los otros Workers.
-- Probar la APK 1.1.0 en un celular real y en Waydroid (las pruebas automáticas pasan; en un teléfono aún no).
-- El conteo de reproducciones vive solo en la computadora.
-- Celular: siguiente/anterior en la pantalla bloqueada.
+- **⚠️ Actualizar la nube (en la laptop):** la 1.1 y la 1.2 traen cambios en el Worker (tablas nuevas:
+  migraciones 0002–0006). Desde `worker/`: `git pull` y luego `pnpm migrate:remote && pnpm deploy` (misma
+  sesión de `wrangler login`; la URL y el token de la app no cambian). Hasta entonces el celular funciona,
+  pero sin playlists, "Agregar música", sugerencias, conteo de reproducciones ni edición de playlists.
+  Opcional: conectar el repo en Cloudflare (Worker → Settings → Build) para que se despliegue solo.
+- **Probar la 1.2 en un teléfono real** antes de publicarla: el reproductor nativo (pantalla apagada,
+  ⏮ ⏭ en la pantalla bloqueada) y el widget dependen de Android y no se pueden probar aquí (las pruebas
+  automáticas y el empaquetado sí pasan). APK de prueba: Actions → CI → Run workflow en la rama, y bajar
+  `vibes-android` de los *Artifacts* de la corrida.
 - Opcional: Groq para pedir música con palabras ("algo tranquilo para trabajar").
 
 ## Requisitos
@@ -80,7 +97,7 @@ los instaladores como *Artifacts* de la corrida.
 
 ```bash
 pnpm build:linux                                  # genera dist/vibes_<versión>_amd64.deb y dist/Vibes-<versión>.AppImage
-sudo apt install ./dist/vibes_1.1.0_amd64.deb     # queda en el menú como "Vibes"
+sudo apt install ./dist/vibes_1.2.0_amd64.deb     # queda en el menú como "Vibes"
 ```
 
 El `.deb` instala `ffmpeg` como dependencia. `yt-dlp` instálalo aparte con `pipx install yt-dlp` (el de apt

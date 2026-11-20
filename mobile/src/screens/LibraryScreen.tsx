@@ -6,6 +6,7 @@ import {
   FlatList,
   Image,
   Pressable,
+  Switch,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -57,7 +58,19 @@ interface Props {
   progress?: DownloadProgress | null
   onCancelDownloads?: () => void
 
-  /** Opens the YouTube search (to mark songs for the computer). */
+  /** The selected playlist is kept downloaded (new songs too). */
+  keepDownloaded?: boolean
+  onToggleKeep?: () => void
+  wifiOnly?: boolean
+  onToggleWifiOnly?: () => void
+
+  /** Long press on a song: its menu (add to / remove from playlists). */
+  onSongMenu?: (song: CloudSong) => void
+  /** "+ Nueva" playlist; and the selected playlist's menu (rename, delete). */
+  onNewPlaylist?: () => void
+  onPlaylistMenu?: () => void
+
+  /** Opens the search (to mark songs for the computer). */
   onOpenSearch?: () => void
   /** Songs marked here, waiting for the computer. */
   requests?: SongRequest[]
@@ -128,6 +141,15 @@ export function LibraryScreen(p: Props): React.JSX.Element {
                 <Ionicons name="add-circle-outline" size={28} color={colors.muted} />
               </Pressable>
             )}
+            {p.playlistId && p.onPlaylistMenu && !p.offline && (
+              <Pressable
+                onPress={p.onPlaylistMenu}
+                accessibilityLabel="Opciones de la playlist"
+                hitSlop={12}
+              >
+                <Ionicons name="ellipsis-horizontal" size={26} color={colors.muted} />
+              </Pressable>
+            )}
             <Pressable onPress={p.onOpenSettings} accessibilityLabel="Nube" hitSlop={12}>
               <Ionicons name="cloud-outline" size={26} color={colors.muted} />
             </Pressable>
@@ -189,7 +211,7 @@ export function LibraryScreen(p: Props): React.JSX.Element {
             </View>
           )}
 
-          {!!p.playlists?.length && (
+          {(!!p.playlists?.length || (!!p.onNewPlaylist && !p.offline)) && (
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -200,7 +222,7 @@ export function LibraryScreen(p: Props): React.JSX.Element {
                 active={!p.playlistId}
                 onPress={() => p.onSelectPlaylist?.(null)}
               />
-              {p.playlists.map((pl) => (
+              {(p.playlists ?? []).map((pl) => (
                 <Chip
                   key={pl.id}
                   label={pl.name}
@@ -208,6 +230,9 @@ export function LibraryScreen(p: Props): React.JSX.Element {
                   onPress={() => p.onSelectPlaylist?.(pl.id)}
                 />
               ))}
+              {p.onNewPlaylist && !p.offline && (
+                <Chip label="+ Nueva" active={false} onPress={p.onNewPlaylist} />
+              )}
             </ScrollView>
           )}
 
@@ -270,6 +295,31 @@ export function LibraryScreen(p: Props): React.JSX.Element {
             )
           )}
 
+          {!p.offline && p.onToggleWifiOnly && (
+            <View style={styles.switches}>
+              {p.playlistId && p.onToggleKeep && (
+                <View style={styles.switchRow}>
+                  <Text style={styles.switchText}>Mantener descargada</Text>
+                  <Switch
+                    accessibilityLabel="Mantener descargada"
+                    value={!!p.keepDownloaded}
+                    onValueChange={p.onToggleKeep}
+                    trackColor={{ true: colors.pink }}
+                  />
+                </View>
+              )}
+              <View style={styles.switchRow}>
+                <Text style={styles.switchText}>Descargar solo con Wi-Fi</Text>
+                <Switch
+                  accessibilityLabel="Descargar solo con Wi-Fi"
+                  value={!!p.wifiOnly}
+                  onValueChange={p.onToggleWifiOnly}
+                  trackColor={{ true: colors.pink }}
+                />
+              </View>
+            </View>
+          )}
+
           {p.error && (
             <Text testID="error" style={styles.error}>
               {p.error}
@@ -287,6 +337,7 @@ export function LibraryScreen(p: Props): React.JSX.Element {
             accessibilityRole="button"
             accessibilityLabel={`${s.title}, ${s.artists}`}
             onPress={() => p.onPlay(s.id)}
+            onLongPress={p.onSongMenu && !p.offline ? () => p.onSongMenu?.(s) : undefined}
             style={({ pressed }) => [styles.row, (pressed || isCurrent) && styles.rowActive]}
           >
             {s.coverUrl ? (
@@ -438,6 +489,9 @@ const styles = StyleSheet.create({
   progressText: { color: colors.muted, fontSize: 13, flex: 1 },
   link: { color: colors.pinkSoft, fontSize: 14, fontWeight: '600' },
   error: { color: colors.red, marginTop: 12, fontSize: 14 },
+  switches: { marginTop: 10 },
+  switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  switchText: { color: colors.muted, fontSize: 14 },
   empty: { color: colors.faint, textAlign: 'center', padding: 32, fontSize: 15, lineHeight: 22 },
   row: {
     flexDirection: 'row',

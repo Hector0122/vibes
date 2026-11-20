@@ -129,5 +129,7 @@ export interface VibesAPI {
   saveCloudSettings(input: CloudSettingsInput): Promise<CloudSettingsView>
   testCloud(input: CloudSettingsInput): Promise<CloudTestResult>
   onSongUpdated(cb: (song: LocalSong) => void): () => void
+  /** Playlists changed outside the window (edits from the phone). */
+  onPlaylistsChanged(cb: () => void): () => void
   onProgress(cb: (p: TaskProgress) => void): () => void
 }

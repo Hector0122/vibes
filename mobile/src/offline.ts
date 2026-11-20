@@ -41,7 +41,9 @@ async function writeJson(f: File, value: unknown): Promise<void> {
 
 export async function loadSnapshot(): Promise<Snapshot | null> {
   const s = await readJson<Snapshot>(snapshotFile())
-  return s && Array.isArray(s.songs) ? { ...s, playlists: Array.isArray(s.playlists) ? s.playlists : [] } : null
+  return s && Array.isArray(s.songs)
+    ? { ...s, playlists: Array.isArray(s.playlists) ? s.playlists : [] }
+    : null
 }
 
 export const saveSnapshot = (s: Snapshot): Promise<void> => writeJson(snapshotFile(), s)
@@ -88,3 +90,42 @@ export function freeSpace(): number | null {
     return null
   }
 }
+
+/** What was playing, to pick up where you left off (also what the widget plays). */
+export interface Session {
+  current: CloudSong
+  time: number
+  queueIds: string[]
+  shuffle: boolean
+  savedAt: number
+}
+
+const sessionFile = (): File => new File(root(), 'session.json')
+
+export async function loadSession(): Promise<Session | null> {
+  const s = await readJson<Session>(sessionFile())
+  return s && s.current && typeof s.current.id === 'string' && Array.isArray(s.queueIds) ? s : null
+}
+
+export const saveSession = (s: Session): Promise<void> => writeJson(sessionFile(), s)
+
+/** Download settings, kept on the phone. */
+export interface Prefs {
+  /** Automatic downloads (kept playlists) wait for Wi-Fi; manual ones ask first. */
+  wifiOnly: boolean
+  /** Playlists whose songs are downloaded automatically, new ones included. */
+  keep: string[]
+}
+
+const prefsFile = (): File => new File(root(), 'prefs.json')
+export const DEFAULT_PREFS: Prefs = { wifiOnly: true, keep: [] }
+
+export async function loadPrefs(): Promise<Prefs> {
+  const p = await readJson<Partial<Prefs>>(prefsFile())
+  return {
+    wifiOnly: typeof p?.wifiOnly === 'boolean' ? p.wifiOnly : DEFAULT_PREFS.wifiOnly,
+    keep: Array.isArray(p?.keep) ? p.keep.filter((x): x is string => typeof x === 'string') : []
+  }
+}
+
+export const savePrefs = (p: Prefs): Promise<void> => writeJson(prefsFile(), p)

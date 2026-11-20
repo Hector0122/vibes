@@ -11,7 +11,13 @@ type Status = {
   isBuffering: boolean
 }
 
-const initial: Status = { playing: false, currentTime: 0, duration: 0, didJustFinish: false, isBuffering: false }
+const initial: Status = {
+  playing: false,
+  currentTime: 0,
+  duration: 0,
+  didJustFinish: false,
+  isBuffering: false
+}
 let status: Status = { ...initial }
 const listeners = new Set<(s: Status) => void>()
 
@@ -35,7 +41,8 @@ export const mockPlayer = {
 export function mockReset(): void {
   status = { ...initial }
   mockPlayer.sources = []
-  for (const f of Object.values(mockPlayer)) if (typeof f === 'function' && 'mockClear' in f) f.mockClear()
+  for (const f of Object.values(mockPlayer))
+    if (typeof f === 'function' && 'mockClear' in f) f.mockClear()
 }
 
 export const setAudioModeAsync = jest.fn(async () => {})
@@ -50,3 +57,123 @@ export function useAudioPlayerStatus(): Status {
   }, [])
   return s
 }
+
+// ── Native playlist (the app's player) ─────────────────────────────────────
+// Holds URIs like ExoPlayer would. `played` logs each URI that started playing.
+// Tests end a song with mockPlaylistFinish() (Android moves on by itself) and
+// set time with mockPlaylistStatus().
+type PlStatus = {
+  playing: boolean
+  currentTime: number
+  duration: number
+  isBuffering: boolean
+  didJustFinish: boolean
+}
+type PlListener = (arg: unknown) => void
+const plListeners: Record<string, Set<PlListener>> = {
+  playlistStatusUpdate: new Set(),
+  trackChanged: new Set()
+}
+let plStatus: PlStatus = {
+  playing: false,
+  currentTime: 0,
+  duration: 0,
+  isBuffering: false,
+  didJustFinish: false
+}
+
+function plEmit(patch: Partial<PlStatus> = {}): void {
+  plStatus = { ...plStatus, ...patch }
+  plListeners.playlistStatusUpdate.forEach((l) =>
+    l({ ...plStatus, currentIndex: mockPlaylist.currentIndex })
+  )
+}
+function plTrackChanged(prev: number): void {
+  plStatus = { ...plStatus, currentTime: 0 }
+  if (plStatus.playing) mockPlaylist.played.push(mockPlaylist.uris[mockPlaylist.currentIndex])
+  plListeners.trackChanged.forEach((l) =>
+    l({ previousIndex: prev, currentIndex: mockPlaylist.currentIndex })
+  )
+  plEmit()
+}
+
+export const mockPlaylist = {
+  uris: [] as string[],
+  currentIndex: 0,
+  played: [] as string[],
+  add: jest.fn((src: { uri: string }) => {
+    mockPlaylist.uris.push(src.uri)
+  }),
+  insert: jest.fn((src: { uri: string }, i: number) => {
+    mockPlaylist.uris.splice(i, 0, src.uri)
+    if (i <= mockPlaylist.currentIndex && mockPlaylist.uris.length > 1) mockPlaylist.currentIndex++
+  }),
+  remove: jest.fn((i: number) => {
+    mockPlaylist.uris.splice(i, 1)
+    if (i < mockPlaylist.currentIndex) mockPlaylist.currentIndex--
+  }),
+  clear: jest.fn(() => {
+    mockPlaylist.uris = []
+    mockPlaylist.currentIndex = 0
+    plStatus = { ...plStatus, playing: false, currentTime: 0 }
+  }),
+  play: jest.fn(() => {
+    const was = plStatus.playing
+    if (!was || mockPlaylist.played.at(-1) !== mockPlaylist.uris[mockPlaylist.currentIndex]) {
+      mockPlaylist.played.push(mockPlaylist.uris[mockPlaylist.currentIndex])
+    }
+    plEmit({ playing: true, duration: 200 })
+  }),
+  pause: jest.fn(() => plEmit({ playing: false })),
+  seekTo: jest.fn(async (t: number) => plEmit({ currentTime: t })),
+  next: jest.fn(() => {
+    if (mockPlaylist.currentIndex >= mockPlaylist.uris.length - 1) return
+    const prev = mockPlaylist.currentIndex++
+    plTrackChanged(prev)
+  }),
+  previous: jest.fn(() => {
+    if (mockPlaylist.currentIndex <= 0) return
+    const prev = mockPlaylist.currentIndex--
+    plTrackChanged(prev)
+  }),
+  setActiveForLockScreen: jest.fn(),
+  updateLockScreenMetadata: jest.fn(),
+  destroy: jest.fn(),
+  addListener: jest.fn((event: string, l: PlListener) => {
+    plListeners[event]?.add(l)
+    return { remove: () => plListeners[event]?.delete(l) }
+  })
+}
+
+/** The song ended: Android moves to the next one in the list, still playing. */
+export function mockPlaylistFinish(): void {
+  if (mockPlaylist.currentIndex >= mockPlaylist.uris.length - 1) {
+    plEmit({ playing: false, didJustFinish: true })
+    return
+  }
+  const prev = mockPlaylist.currentIndex++
+  plTrackChanged(prev)
+}
+
+export function mockPlaylistStatus(patch: Partial<PlStatus>): void {
+  plEmit(patch)
+}
+
+export function mockPlaylistReset(): void {
+  plListeners.playlistStatusUpdate.clear()
+  plListeners.trackChanged.clear()
+  mockPlaylist.uris = []
+  mockPlaylist.currentIndex = 0
+  mockPlaylist.played = []
+  plStatus = {
+    playing: false,
+    currentTime: 0,
+    duration: 0,
+    isBuffering: false,
+    didJustFinish: false
+  }
+  for (const f of Object.values(mockPlaylist))
+    if (typeof f === 'function' && 'mockClear' in f) f.mockClear()
+}
+
+export const createAudioPlaylist = jest.fn(() => mockPlaylist)

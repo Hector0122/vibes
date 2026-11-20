@@ -193,3 +193,25 @@ describe('recommendations', () => {
     expect((await h.call('PUT', '/v1/recommendations', { results: [] })).status).toBe(400)
   })
 })
+
+describe('plays from the phone', () => {
+  it('the phone adds plays; the desktop reads them and clears what it counted', async () => {
+    expect((await h.call('POST', '/v1/plays', { plays: [{ id: OTHER, at: 5 }, { id: SONG_ID, at: 6 }] })).status).toBe(200)
+    const list = (await (await h.call('GET', '/v1/plays')).json()) as { plays: { seq: number; id: string; at: number }[] }
+    expect(list.plays.map((p) => [p.id, p.at])).toEqual([
+      [OTHER, 5],
+      [SONG_ID, 6]
+    ])
+    // One more arrives while the desktop counts: it isn't cleared.
+    await h.call('POST', '/v1/plays', { plays: [{ id: OTHER, at: 7 }] })
+    await h.call('POST', '/v1/plays/ack', { upTo: list.plays[1].seq })
+    const left = (await (await h.call('GET', '/v1/plays')).json()) as { plays: { at: number }[] }
+    expect(left.plays.map((p) => p.at)).toEqual([7])
+  })
+
+  it('rejects invalid plays', async () => {
+    expect((await h.call('POST', '/v1/plays', { plays: [{ id: 'x', at: 1 }] })).status).toBe(400)
+    expect((await h.call('POST', '/v1/plays', { plays: [{ id: OTHER, at: -1 }] })).status).toBe(400)
+    expect((await h.call('POST', '/v1/plays/ack', {})).status).toBe(400)
+  })
+})

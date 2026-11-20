@@ -2,7 +2,7 @@
   "expo": {
     "name": "Vibes",
     "slug": "vibes",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -19,7 +19,7 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "dev.vibes.app",
-      "versionCode": 3
+      "versionCode": 4
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -33,7 +33,29 @@
       ],
       "expo-secure-store",
       "expo-font",
-      "expo-asset"
+      "expo-asset",
+      [
+        "react-native-android-widget",
+        {
+          "widgets": [
+            {
+              "name": "Vibes",
+              "label": "Vibes",
+              "description": "Reproduce tu música descargada sin abrir la app",
+              "minWidth": "250dp",
+              "minHeight": "60dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 1,
+              "maxResizeWidth": "500dp",
+              "maxResizeHeight": "120dp",
+              "resizeMode": "horizontal",
+              "widgetCategory": "home_screen",
+              "updatePeriodMillis": 0,
+              "previewImage": "./assets/widget-preview.png"
+            }
+          ]
+        }
+      ]
     ],
     "scheme": "vibes",
     "backgroundColor": "#09090b",
