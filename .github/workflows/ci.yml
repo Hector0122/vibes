@@ -1,15 +1,14 @@
-# Runs every test level on each push and PR: Worker integration tests,
-# the phone app (typecheck + Jest; its client-vs-Worker tests run in the root Vitest),
-# desktop unit/integration tests and the E2E flow against the built app.
+# Runs only when publishing a version (like Vaulta): every test level (Worker
+# integration tests, the phone app's typecheck + Jest, desktop unit/integration
+# tests and the E2E flow against the built app), then the installers, then the
+# GitHub Release. Nothing runs on ordinary pushes or pull requests.
 name: CI
 
 on:
   push:
-    branches: [main]
-    tags: ['v*'] # a version tag (v1.0.0) also publishes a GitHub Release with the installers
-  pull_request:
-  # Publish a version from GitHub (also from the phone): Actions → CI → Run workflow,
-  # on main, with the version in package.json. Creates the tag and the release.
+    tags: ['v*'] # a version tag (v1.1.0), or a release created on GitHub with a new tag
+  # Publish from GitHub (also from the phone): Actions → CI → Run workflow, on main,
+  # with the version in package.json. Creates the tag and the release.
   workflow_dispatch:
     inputs:
       version:

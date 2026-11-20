@@ -20,8 +20,8 @@ En **[Releases](../../releases)** de GitHub, cada versión (`v1.0.0`, …) trae:
 Para sacar una versión: sube el número en `package.json` y `mobile/app.json` (y `versionCode`), y publica una
 etiqueta `git tag -a vX.Y.Z -m "Vibes X.Y.Z" && git push origin vX.Y.Z`, o desde GitHub (también en el
 celular): **Actions → CI → Run workflow** en `main` con la versión. La app del celular avisa sola de la nueva. GitHub Actions corre todas las pruebas,
-arma los instaladores y crea la release (~25 min, la APK es lo más lento). Cada push a `main` también deja
-los instaladores como *Artifacts* de la corrida.
+arma los instaladores y crea la release (~25 min, la APK es lo más lento). El CI corre **solo** al publicar
+una versión, no en cada push ni en los PR: corre las pruebas localmente antes (ver *Desarrollo*).
 
 ## Qué hace hoy (v1.1)
 
