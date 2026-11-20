@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ActivityIndicator, StyleSheet, View } from 'react-native'
+import { ActivityIndicator, Alert, Linking, StyleSheet, View } from 'react-native'
 import type { CloudPlaylist, CloudSong, SongRequest } from '../src/shared/api'
 import { CloudError, createCloud, type Cloud } from './src/cloud'
 import { PlayerBar } from './src/components/PlayerBar'
@@ -10,6 +10,7 @@ import { SearchScreen } from './src/screens/SearchScreen'
 import { SettingsScreen } from './src/screens/SettingsScreen'
 import { loadSettings, saveSettings, type CloudSettings } from './src/settings'
 import { colors } from './src/theme'
+import { checkForUpdate } from './src/updates'
 import { useOffline } from './src/useOffline'
 import { usePlayer } from './src/usePlayer'
 
@@ -40,6 +41,17 @@ export default function App(): React.JSX.Element {
 
   const downloads = useOffline(cloud)
   const player = usePlayer(cloud, queue, downloads.localUri)
+
+  // A newer APK on GitHub: offer it (Android asks before installing).
+  useEffect(() => {
+    void checkForUpdate().then((u) => {
+      if (!u) return
+      Alert.alert('Nueva versión disponible', `Vibes ${u.version} está lista para instalar.`, [
+        { text: 'Después', style: 'cancel' },
+        { text: 'Actualizar', onPress: () => void Linking.openURL(u.apkUrl) }
+      ])
+    })
+  }, [])
 
   useEffect(() => {
     loadSettings().then(setSettings)

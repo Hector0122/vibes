@@ -3,7 +3,7 @@
 // and the next one plays → search narrows what plays next → shuffle → a wrong
 // token says so. Native pieces (audio, secure storage) are the mocks in /__mocks__.
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native'
-import { Alert } from 'react-native'
+import { Alert, Linking } from 'react-native'
 import App from '../../App'
 import type { CloudSong } from '../../../src/shared/api'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -58,6 +58,8 @@ let REQUESTS: Req[] = []
 function fakeWorker(): void {
   globalThis.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
+    if (url.startsWith('https://api.github.com/'))
+      return { ok: false, status: 404, json: async () => ({}) } as Response
     requests.push(url)
     if (!online) throw new TypeError('Network request failed')
     const auth = new Headers(init?.headers).get('authorization')
@@ -467,4 +469,43 @@ describe('with the cloud set up', () => {
     expect(await screen.findByText('Pendiente')).toBeTruthy()
     expect(REQUESTS.map((r) => r.id)).toEqual(['fffffffffff'])
   })
+})
+
+it('a newer release on GitHub offers to download its APK', async () => {
+  const base = globalThis.fetch
+  globalThis.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
+    String(input) === 'https://api.github.com/repos/Hector0122/vibes/releases/latest'
+      ? ({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            tag_name: 'v99.0.0',
+            assets: [
+              {
+                name: 'vibes-99.0.0.apk',
+                browser_download_url: 'https://github.com/x/vibes-99.0.0.apk'
+              }
+            ]
+          })
+        } as Response)
+      : base(input, init)
+  ) as unknown as typeof fetch
+  const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined as never)
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons) => {
+    buttons?.find((b) => b.text === 'Actualizar')?.onPress?.()
+  })
+  try {
+    await render(<App />)
+    await waitFor(() =>
+      expect(alert).toHaveBeenCalledWith(
+        'Nueva versión disponible',
+        'Vibes 99.0.0 está lista para instalar.',
+        expect.any(Array)
+      )
+    )
+    expect(open).toHaveBeenCalledWith('https://github.com/x/vibes-99.0.0.apk')
+  } finally {
+    alert.mockRestore()
+    open.mockRestore()
+  }
 })

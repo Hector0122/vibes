@@ -22,7 +22,7 @@ Para sacar una versión: sube el número en `package.json` y `mobile/app.json`, 
 arma los instaladores y crea la release (~25 min, la APK es lo más lento). Cada push a `main` también deja
 los instaladores como *Artifacts* de la corrida.
 
-## Qué hace hoy (v1.0)
+## Qué hace hoy (v1.1)
 
 **Escritorio (Electron)**
 
@@ -55,11 +55,12 @@ los instaladores como *Artifacts* de la corrida.
   un clip de 30 s. Toca **Agregar** y la canción queda en "Esperando a la compu": la próxima vez que Vibes esté
   abierto en la computadora (revisa cada 2 minutos) la busca en YouTube, la descarga con yt-dlp, la sube y
   aparece en el celular. Si no se pudo, ves el motivo y puedes reintentar o cancelar.
+- Al abrir revisa las releases de este repo: si hay una versión más nueva te ofrece descargar su APK.
 - Para desarrollo: `cd mobile && pnpm install && pnpm start` y escanea el QR con **Expo Go**.
 
 ### Pendiente / siguiente
 
-- Probar la APK 1.0.1 en un celular real y en Waydroid (las pruebas automáticas pasan; en un teléfono aún no).
+- Probar la APK 1.1.0 en un celular real y en Waydroid (las pruebas automáticas pasan; en un teléfono aún no).
 - El conteo de reproducciones vive solo en la computadora.
 - Celular: siguiente/anterior en la pantalla bloqueada.
 - Opcional: Groq para pedir música con palabras ("algo tranquilo para trabajar").
@@ -74,7 +75,7 @@ los instaladores como *Artifacts* de la corrida.
 
 ```bash
 pnpm build:linux                                  # genera dist/vibes_<versión>_amd64.deb y dist/Vibes-<versión>.AppImage
-sudo apt install ./dist/vibes_1.0.1_amd64.deb     # queda en el menú como "Vibes"
+sudo apt install ./dist/vibes_1.1.0_amd64.deb     # queda en el menú como "Vibes"
 ```
 
 El `.deb` instala `ffmpeg` como dependencia. `yt-dlp` instálalo aparte con `pipx install yt-dlp` (el de apt
@@ -107,8 +108,10 @@ pnpm exec wrangler d1 create vibes      # copia el database_id a wrangler.toml
 pnpm migrate:remote
 ```
 
-> **Actualizando de una versión anterior:** las playlists, la cola del celular y las sugerencias necesitan
-> tablas nuevas. Desde `worker/` corre `pnpm migrate:remote && pnpm deploy` una vez.
+> **Despliegue automático:** con el secreto `CLOUDFLARE_API_TOKEN` en el repo (Settings → Secrets and
+> variables → Actions; token de Cloudflare con la plantilla "Edit Cloudflare Workers" + *D1 → Edit*), cada
+> cambio en `worker/` que llega a `main` aplica las migraciones y despliega solo (workflow "Desplegar nube",
+> también se puede correr a mano desde la pestaña Actions, incluso en el celular).
 
 Crea un token de R2 en el dashboard de Cloudflare → R2 → *Manage API tokens* → **Object Read &
 Write** solo para el bucket `vibes`. Luego guarda los secretos (nunca van en el repo):
