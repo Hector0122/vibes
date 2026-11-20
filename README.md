@@ -108,10 +108,8 @@ pnpm exec wrangler d1 create vibes      # copia el database_id a wrangler.toml
 pnpm migrate:remote
 ```
 
-> **Despliegue automático:** con el secreto `CLOUDFLARE_API_TOKEN` en el repo (Settings → Secrets and
-> variables → Actions; token de Cloudflare con la plantilla "Edit Cloudflare Workers" + *D1 → Edit*), cada
-> cambio en `worker/` que llega a `main` aplica las migraciones y despliega solo (workflow "Desplegar nube",
-> también se puede correr a mano desde la pestaña Actions, incluso en el celular).
+> **Al actualizar:** cuando cambie algo en `worker/`, desde esa carpeta corre `git pull` y luego
+> `pnpm migrate:remote && pnpm deploy` (aplica las tablas nuevas y sube el código nuevo).
 
 Crea un token de R2 en el dashboard de Cloudflare → R2 → *Manage API tokens* → **Object Read &
 Write** solo para el bucket `vibes`. Luego guarda los secretos (nunca van en el repo):
