@@ -11,11 +11,16 @@ import {
   REQUEST_ID_RE,
   validateHit,
   validateRecommendations,
+  applyPlaylistOp,
+  validatePlaylistOps,
   validatePlaylists,
   validatePlays,
   type ApiError,
   type CloudPlaylist,
+  type ListPlaylistOpsResponse,
   type ListPlaylistsResponse,
+  type PlaylistOp,
+  type PostPlaylistOpsRequest,
   type ListPlaysResponse,
   type PostPlaysRequest,
   type PutPlaylistsRequest,
@@ -346,6 +351,42 @@ export function createApp(presign: Presigner, opts: AppOptions = {}): App {
     return { deleted: true }
   }
 
+  /** Phone edits: applied to the cloud's playlists now, and kept for the desktop. */
+  async function addPlaylistOps(env: Env, request: Request): Promise<ListPlaylistsResponse> {
+    const body = await readJson<PostPlaylistOpsRequest>(request)
+    const invalid = validatePlaylistOps(body)
+    if (invalid) fail(400, invalid)
+    const now = Date.now()
+    let list = (await listPlaylists(env)).playlists
+    for (const op of body.ops) list = applyPlaylistOp(list, op, now)
+    const insert = 'INSERT INTO playlists (id, name, song_ids, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM playlists'),
+      ...list.map((p, i) =>
+        env.DB.prepare(insert).bind(p.id, p.name, JSON.stringify(p.songIds), i, p.createdAt, p.updatedAt)
+      ),
+      ...body.ops.map((op) =>
+        env.DB.prepare('INSERT INTO playlist_ops (op, created_at) VALUES (?, ?)').bind(JSON.stringify(op), now)
+      )
+    ])
+    return { playlists: list }
+  }
+
+  async function listPlaylistOps(env: Env): Promise<ListPlaylistOpsResponse> {
+    const { results } = await env.DB.prepare('SELECT seq, op FROM playlist_ops ORDER BY seq LIMIT 1000').all<{
+      seq: number
+      op: string
+    }>()
+    return { ops: results.map((r) => ({ ...(JSON.parse(r.op) as PlaylistOp), seq: r.seq })) }
+  }
+
+  async function ackPlaylistOps(env: Env, request: Request): Promise<{ ok: true }> {
+    const body = await readJson<{ upTo?: unknown }>(request)
+    if (!Number.isSafeInteger(body?.upTo)) fail(400, 'Invalid upTo')
+    await env.DB.prepare('DELETE FROM playlist_ops WHERE seq <= ?').bind(body.upTo).run()
+    return { ok: true }
+  }
+
   async function addPlays(env: Env, request: Request): Promise<{ added: number }> {
     const body = await readJson<PostPlaysRequest>(request)
     const invalid = validatePlays(body)
@@ -384,6 +425,9 @@ export function createApp(presign: Presigner, opts: AppOptions = {}): App {
     if (path === '/songs' && method === 'GET') return json(await listSongs(env))
     if (path === '/playlists' && method === 'GET') return json(await listPlaylists(env))
     if (path === '/playlists' && method === 'PUT') return json(await putPlaylists(env, request))
+    if (path === '/playlists/ops' && method === 'POST') return json(await addPlaylistOps(env, request))
+    if (path === '/playlists/ops' && method === 'GET') return json(await listPlaylistOps(env))
+    if (path === '/playlists/ops/ack' && method === 'POST') return json(await ackPlaylistOps(env, request))
     if (path === '/playlists') return fail(405, 'Method not allowed')
     if (path === '/plays' && method === 'POST') return json(await addPlays(env, request))
     if (path === '/plays' && method === 'GET') return json(await listPlays(env))

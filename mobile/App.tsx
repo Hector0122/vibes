@@ -1,8 +1,16 @@
 import { StatusBar } from 'expo-status-bar'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ActivityIndicator, Alert, Linking, StyleSheet, View } from 'react-native'
-import type { CloudPlaylist, CloudSong, SongRequest } from '../src/shared/api'
+import {
+  applyPlaylistOp,
+  type CloudPlaylist,
+  type CloudSong,
+  type PlaylistOp,
+  type SongRequest
+} from '../src/shared/api'
 import { CloudError, createCloud, type Cloud } from './src/cloud'
+import { ActionSheet, type Action } from './src/components/ActionSheet'
+import { NameDialog } from './src/components/NameDialog'
 import { PlayerBar } from './src/components/PlayerBar'
 import {
   DEFAULT_PREFS,
@@ -41,6 +49,17 @@ export default function App(): React.JSX.Element {
   const [requests, setRequests] = useState<SongRequest[]>([])
   const [searching, setSearching] = useState(false)
   const [nowOpen, setNowOpen] = useState(false)
+  /** Open menus / dialogs: a song's menu, the playlist's menu, a name prompt. */
+  const [sheet, setSheet] = useState<{
+    title: string
+    subtitle?: string
+    actions: Action[]
+  } | null>(null)
+  const [naming, setNaming] = useState<{
+    title: string
+    initial?: string
+    save: (name: string) => void
+  } | null>(null)
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS)
 
   const cloud: Cloud | null = useMemo(() => {
@@ -208,6 +227,95 @@ export default function App(): React.JSX.Element {
     )
   }
 
+  /** Edits a playlist: shown right away, sent to the cloud (the computer takes it from there). */
+  const editPlaylists = async (ops: PlaylistOp[]): Promise<void> => {
+    if (!cloud) return
+    const before = playlists
+    setPlaylists((list) => ops.reduce((l, op) => applyPlaylistOp(l, op, Date.now()), list))
+    try {
+      const now = await cloud.editPlaylists(ops)
+      setPlaylists(now)
+      void saveSnapshot({ songs, playlists: now, savedAt: Date.now() }).catch(() => {})
+    } catch (e) {
+      setPlaylists(before)
+      setError(
+        (e as { status?: number }).status === 0
+          ? 'Necesitas internet para editar las playlists'
+          : (e as Error).message
+      )
+    }
+  }
+  const newPlaylistId = (): string =>
+    Array.from({ length: 12 }, () => Math.floor(Math.random() * 16).toString(16)).join('')
+
+  const askNewPlaylist = (withSong?: CloudSong): void =>
+    setNaming({
+      title: 'Nueva playlist',
+      save: (name) => {
+        const id = newPlaylistId()
+        const ops: PlaylistOp[] = [{ type: 'create', id, name }]
+        if (withSong) ops.push({ type: 'add', id, songIds: [withSong.id] })
+        void editPlaylists(ops)
+      }
+    })
+
+  const songMenu = (s: CloudSong): void => {
+    const actions: Action[] = playlists
+      .filter((p) => !p.songIds.includes(s.id))
+      .map((p) => ({
+        label: `Agregar a «${p.name}»`,
+        onPress: () => void editPlaylists([{ type: 'add', id: p.id, songIds: [s.id] }])
+      }))
+    actions.push({ label: 'Agregar a una playlist nueva…', onPress: () => askNewPlaylist(s) })
+    if (selected) {
+      actions.unshift({
+        label: `Quitar de «${selected.name}»`,
+        destructive: true,
+        onPress: () => void editPlaylists([{ type: 'remove', id: selected.id, songId: s.id }])
+      })
+    }
+    setSheet({ title: s.title, subtitle: s.artists, actions })
+  }
+
+  const playlistMenu = (): void => {
+    const pl = selected
+    if (!pl) return
+    setSheet({
+      title: pl.name,
+      actions: [
+        {
+          label: 'Renombrar',
+          onPress: () =>
+            setNaming({
+              title: 'Renombrar playlist',
+              initial: pl.name,
+              save: (name) => void editPlaylists([{ type: 'rename', id: pl.id, name }])
+            })
+        },
+        {
+          label: 'Eliminar playlist',
+          destructive: true,
+          onPress: () =>
+            Alert.alert(
+              'Eliminar playlist',
+              `¿Eliminar «${pl.name}»? Las canciones siguen en tu biblioteca.`,
+              [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                  text: 'Eliminar',
+                  style: 'destructive',
+                  onPress: () => {
+                    setPlaylistId(null)
+                    void editPlaylists([{ type: 'delete', id: pl.id }])
+                  }
+                }
+              ]
+            )
+        }
+      ]
+    })
+  }
+
   const retryRequest = async (r: SongRequest): Promise<void> => {
     if (!cloud) return
     try {
@@ -283,12 +391,32 @@ export default function App(): React.JSX.Element {
           progress={downloads.progress}
           onCancelDownloads={downloads.cancel}
           onOpenSearch={() => setSearching(true)}
+          onSongMenu={songMenu}
+          onNewPlaylist={() => askNewPlaylist()}
+          onPlaylistMenu={playlistMenu}
           requests={requests}
           onCancelRequest={(r) => void cancelRequest(r)}
           onRetryRequest={(r) => void retryRequest(r)}
         />
       )}
       <PlayerBar player={player} onOpen={() => setNowOpen(true)} />
+      <ActionSheet
+        visible={!!sheet}
+        title={sheet?.title ?? ''}
+        subtitle={sheet?.subtitle}
+        actions={sheet?.actions ?? []}
+        onClose={() => setSheet(null)}
+      />
+      <NameDialog
+        visible={!!naming}
+        title={naming?.title ?? ''}
+        initial={naming?.initial}
+        onCancel={() => setNaming(null)}
+        onSave={(name) => {
+          naming?.save(name)
+          setNaming(null)
+        }}
+      />
     </View>
   )
 }

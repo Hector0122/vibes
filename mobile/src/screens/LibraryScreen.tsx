@@ -64,6 +64,12 @@ interface Props {
   wifiOnly?: boolean
   onToggleWifiOnly?: () => void
 
+  /** Long press on a song: its menu (add to / remove from playlists). */
+  onSongMenu?: (song: CloudSong) => void
+  /** "+ Nueva" playlist; and the selected playlist's menu (rename, delete). */
+  onNewPlaylist?: () => void
+  onPlaylistMenu?: () => void
+
   /** Opens the search (to mark songs for the computer). */
   onOpenSearch?: () => void
   /** Songs marked here, waiting for the computer. */
@@ -135,6 +141,15 @@ export function LibraryScreen(p: Props): React.JSX.Element {
                 <Ionicons name="add-circle-outline" size={28} color={colors.muted} />
               </Pressable>
             )}
+            {p.playlistId && p.onPlaylistMenu && !p.offline && (
+              <Pressable
+                onPress={p.onPlaylistMenu}
+                accessibilityLabel="Opciones de la playlist"
+                hitSlop={12}
+              >
+                <Ionicons name="ellipsis-horizontal" size={26} color={colors.muted} />
+              </Pressable>
+            )}
             <Pressable onPress={p.onOpenSettings} accessibilityLabel="Nube" hitSlop={12}>
               <Ionicons name="cloud-outline" size={26} color={colors.muted} />
             </Pressable>
@@ -196,7 +211,7 @@ export function LibraryScreen(p: Props): React.JSX.Element {
             </View>
           )}
 
-          {!!p.playlists?.length && (
+          {(!!p.playlists?.length || (!!p.onNewPlaylist && !p.offline)) && (
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -207,7 +222,7 @@ export function LibraryScreen(p: Props): React.JSX.Element {
                 active={!p.playlistId}
                 onPress={() => p.onSelectPlaylist?.(null)}
               />
-              {p.playlists.map((pl) => (
+              {(p.playlists ?? []).map((pl) => (
                 <Chip
                   key={pl.id}
                   label={pl.name}
@@ -215,6 +230,9 @@ export function LibraryScreen(p: Props): React.JSX.Element {
                   onPress={() => p.onSelectPlaylist?.(pl.id)}
                 />
               ))}
+              {p.onNewPlaylist && !p.offline && (
+                <Chip label="+ Nueva" active={false} onPress={p.onNewPlaylist} />
+              )}
             </ScrollView>
           )}
 
@@ -319,6 +337,7 @@ export function LibraryScreen(p: Props): React.JSX.Element {
             accessibilityRole="button"
             accessibilityLabel={`${s.title}, ${s.artists}`}
             onPress={() => p.onPlay(s.id)}
+            onLongPress={p.onSongMenu && !p.offline ? () => p.onSongMenu?.(s) : undefined}
             style={({ pressed }) => [styles.row, (pressed || isCurrent) && styles.rowActive]}
           >
             {s.coverUrl ? (

@@ -98,13 +98,16 @@ export default function App(): React.JSX.Element {
     refresh()
     refreshCloud()
     refreshPlaylists()
+    // A song that's new to the list (e.g. one marked on the phone) is added to it.
     const offSong = window.api.onSongUpdated((s) =>
-      setSongs((prev) => prev.map((p) => (p.id === s.id ? s : p)))
+      setSongs((prev) => (prev.some((p) => p.id === s.id) ? prev.map((p) => (p.id === s.id ? s : p)) : [...prev, s]))
     )
     const offProgress = window.api.onProgress(setProgress)
+    const offPlaylists = window.api.onPlaylistsChanged(() => void refreshPlaylists())
     return () => {
       offSong()
       offProgress()
+      offPlaylists()
     }
   }, [])
 

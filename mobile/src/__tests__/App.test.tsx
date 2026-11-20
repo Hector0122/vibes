@@ -6,7 +6,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-
 import { Alert, Linking } from 'react-native'
 import App from '../../App'
 import { engine } from '../engine'
-import type { CloudSong } from '../../../src/shared/api'
+import { applyPlaylistOp, type CloudSong, type PlaylistOp } from '../../../src/shared/api'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const audio = require('expo-audio') as typeof import('../../__mocks__/expo-audio')
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -47,6 +47,7 @@ let PLAYLISTS: {
   updatedAt: number
 }[] = []
 let online = true
+let OPS: PlaylistOp[] = []
 type Req = {
   id: string
   title: string
@@ -66,7 +67,13 @@ function fakeWorker(): void {
         ok: true,
         status: 200,
         json: async () => [
-          { trackName: 'Afuera', artistName: 'Caifanes', duration: 200, syncedLyrics: '[00:01.00] Primera\n[00:10.00] Segunda línea', plainLyrics: 'Primera\nSegunda línea' }
+          {
+            trackName: 'Afuera',
+            artistName: 'Caifanes',
+            duration: 200,
+            syncedLyrics: '[00:01.00] Primera\n[00:10.00] Segunda línea',
+            plainLyrics: 'Primera\nSegunda línea'
+          }
         ]
       } as Response
     }
@@ -80,6 +87,12 @@ function fakeWorker(): void {
     if (auth !== `Bearer ${TOKEN}`) return json({ error: 'Unauthorized' }, 401)
     if (url.endsWith('/v1/health')) return json({ ok: true })
     if (url.endsWith('/v1/songs')) return json({ songs: [...SONGS] })
+    if (url.endsWith('/v1/playlists/ops') && init?.method === 'POST') {
+      const { ops } = JSON.parse(String(init.body)) as { ops: PlaylistOp[] }
+      OPS.push(...ops)
+      PLAYLISTS = ops.reduce((l, op) => applyPlaylistOp(l, op, 5), PLAYLISTS)
+      return json({ playlists: PLAYLISTS })
+    }
     if (url.endsWith('/v1/playlists')) return json({ playlists: PLAYLISTS })
     if (url.includes('/v1/search?q=')) {
       const hit = (id: string, title: string, previewUrl: string | null) => ({
@@ -148,6 +161,7 @@ beforeEach(() => {
   requests.length = 0
   PLAYLISTS = []
   REQUESTS = []
+  OPS = []
   online = true
   fakeWorker()
 })
@@ -581,6 +595,67 @@ describe('kept playlists and Wi-Fi', () => {
     } finally {
       alert.mockRestore()
     }
+  })
+})
+
+describe('editing playlists on the phone', () => {
+  beforeEach(() => {
+    store.mockStore.set(
+      'vibes.cloud',
+      JSON.stringify({ url: 'https://w.example.dev', token: TOKEN })
+    )
+    PLAYLISTS = [{ id: 'p1', name: 'Viaje', songIds: ['aaaaaaaaaaa'], createdAt: 0, updatedAt: 0 }]
+  })
+
+  it('new playlist, add a song with a long press, remove it, rename, delete', async () => {
+    await render(<App />)
+    await fireEvent.press(await screen.findByText('+ Nueva'))
+    await fireEvent.changeText(screen.getByTestId('playlist-name'), 'Gym')
+    await fireEvent.press(screen.getByText('Guardar'))
+    expect(await screen.findByText('Gym')).toBeTruthy()
+    expect(OPS).toMatchObject([{ type: 'create', name: 'Gym' }])
+    const gym = OPS[0].id
+
+    await fireEvent(screen.getByTestId('song-ccccccccccc'), 'longPress')
+    await fireEvent.press(await screen.findByText('Agregar a «Gym»'))
+    await waitFor(() =>
+      expect(OPS.at(-1)).toEqual({ type: 'add', id: gym, songIds: ['ccccccccccc'] })
+    )
+
+    await fireEvent.press(screen.getByText('Gym'))
+    expect(await screen.findByTestId('song-ccccccccccc')).toBeTruthy()
+    await fireEvent(screen.getByTestId('song-ccccccccccc'), 'longPress')
+    await fireEvent.press(await screen.findByText('Quitar de «Gym»'))
+    await waitFor(() => expect(screen.queryByTestId('song-ccccccccccc')).toBeNull())
+
+    await fireEvent.press(screen.getByLabelText('Opciones de la playlist'))
+    await fireEvent.press(await screen.findByText('Renombrar'))
+    await fireEvent.changeText(screen.getByTestId('playlist-name'), 'Gym pesado')
+    await fireEvent.press(screen.getByText('Guardar'))
+    await waitFor(() => expect(screen.getByTestId('title')).toHaveTextContent('Gym pesado'))
+
+    const alert = jest
+      .spyOn(Alert, 'alert')
+      .mockImplementation((_t, _m, b) => b?.find((x) => x.style === 'destructive')?.onPress?.())
+    try {
+      await fireEvent.press(screen.getByLabelText('Opciones de la playlist'))
+      await fireEvent.press(await screen.findByText('Eliminar playlist'))
+      await waitFor(() => expect(PLAYLISTS.map((p) => p.id)).toEqual(['p1']))
+      expect(screen.getByTestId('title')).toHaveTextContent('Tu música')
+    } finally {
+      alert.mockRestore()
+    }
+  })
+
+  it('without internet the edit is undone and says why', async () => {
+    await render(<App />)
+    await screen.findByTestId('song-ccccccccccc')
+    online = false
+    await fireEvent(screen.getByTestId('song-ccccccccccc'), 'longPress')
+    await fireEvent.press(await screen.findByText('Agregar a «Viaje»'))
+    expect(await screen.findByText('Necesitas internet para editar las playlists')).toBeTruthy()
+    await fireEvent.press(screen.getByText('Viaje'))
+    expect(screen.queryByTestId('song-ccccccccccc')).toBeNull()
   })
 })
 

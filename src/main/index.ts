@@ -4,6 +4,7 @@ import { join } from 'path'
 import { YOUTUBE_ID_RE } from '../shared/api'
 import type { CloudSettingsInput, LocalSong, Recommendations, SearchResult, SongRef, TaskProgress } from '../shared/types'
 import { CloudClient } from './cloud/client'
+import { pullPlaylistOps } from './cloud/playlist-ops'
 import { createPlaylistSync } from './cloud/playlist-sync'
 import { toCloudRecommendations } from './cloud/recommendations'
 import { importPhonePlays } from './cloud/plays'
@@ -39,7 +40,7 @@ const REQUESTS_EVERY_MS = 2 * 60_000
 /** And how often to refresh the phone's "Recomendado para ti" (also whenever Home loads them). */
 const RECOMMEND_EVERY_MS = 6 * 60 * 60_000
 
-function send(channel: string, payload: LocalSong | TaskProgress): void {
+function send(channel: string, payload: LocalSong | TaskProgress | null): void {
   win?.webContents.send(channel, payload)
 }
 
@@ -62,8 +63,15 @@ async function main(): Promise<void> {
   const settings = new CloudSettingsStore(join(userData, 'cloud.json'), safeStorage)
   const { port } = await startAudioServer(audioDir)
   // Playlists are mirrored to the cloud (for the phone) after every change.
+  /** The phone's playlist edits, into the desktop's playlists (the window is told). */
+  const pullPhoneEdits = async (client: CloudClient): Promise<number> => {
+    const n = await pullPlaylistOps(client, (ops) => playlists.applyOps(ops))
+    if (n) win?.webContents.send('playlists-changed', null)
+    return n
+  }
   const playlistSync = createPlaylistSync({
     list: () => playlists.list(),
+    pull: pullPhoneEdits,
     client: async () => {
       const active = await settings.active()
       return active ? new CloudClient({ baseUrl: active.url, token: active.token, retries: 1 }) : null
@@ -184,6 +192,8 @@ async function main(): Promise<void> {
       })
     })
     if (run.done || run.failed) console.log(`Canciones del celular: ${run.done} agregadas, ${run.failed} con error`)
+    // Playlist edits from the phone: in, then our set goes back up.
+    if (await pullPhoneEdits(client)) playlistSync.schedule()
     // And what was listened to on the phone counts here too (for the recommendations).
     const plays = await importPhonePlays(client, (id, at) => recordPlay(ctx, id, at))
     if (plays) console.log(`Reproducciones del celular: ${plays}`)

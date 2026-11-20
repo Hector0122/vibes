@@ -3,6 +3,7 @@
 // Kept in memory; every change is written back atomically, one write at a time.
 import { randomBytes } from 'crypto'
 import { readFile, rename, writeFile } from 'fs/promises'
+import { applyPlaylistOp, type PlaylistOp } from '../shared/api'
 import type { Playlist } from '../shared/types'
 
 const MAX_NAME = 100
@@ -89,6 +90,13 @@ export class Playlists {
     const [song] = p.songIds.splice(f, 1)
     p.songIds.splice(t, 0, song)
     p.updatedAt = now
+    await this.save()
+  }
+
+  /** Edits made on the phone (already checked by the cloud), in order. */
+  async applyOps(ops: PlaylistOp[], now = Date.now()): Promise<void> {
+    if (ops.length === 0) return
+    this.items = ops.reduce((list, op) => applyPlaylistOp(list, op, now), this.items)
     await this.save()
   }
 
