@@ -1,11 +1,12 @@
 import { StatusBar } from 'expo-status-bar'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ActivityIndicator, StyleSheet, View } from 'react-native'
-import type { CloudPlaylist, CloudSong } from '../src/shared/api'
+import type { CloudPlaylist, CloudSong, SongRequest } from '../src/shared/api'
 import { CloudError, createCloud, type Cloud } from './src/cloud'
 import { PlayerBar } from './src/components/PlayerBar'
 import { loadSnapshot, saveSnapshot } from './src/offline'
 import { LibraryScreen, type DownloadState } from './src/screens/LibraryScreen'
+import { SearchScreen } from './src/screens/SearchScreen'
 import { SettingsScreen } from './src/screens/SettingsScreen'
 import { loadSettings, saveSettings, type CloudSettings } from './src/settings'
 import { colors } from './src/theme'
@@ -25,6 +26,8 @@ export default function App(): React.JSX.Element {
   const [offline, setOffline] = useState(false)
   const [playlistId, setPlaylistId] = useState<string | null>(null)
   const [onlyDownloaded, setOnlyDownloaded] = useState(false)
+  const [requests, setRequests] = useState<SongRequest[]>([])
+  const [searching, setSearching] = useState(false)
 
   const cloud: Cloud | null = useMemo(() => {
     if (!settings) return null
@@ -54,9 +57,14 @@ export default function App(): React.JSX.Element {
     setLoading(true)
     setError(null)
     try {
-      const [list, lists] = await Promise.all([cloud.listSongs(), cloud.listPlaylists()])
+      const [list, lists, marked] = await Promise.all([
+        cloud.listSongs(),
+        cloud.listPlaylists(),
+        cloud.listRequests()
+      ])
       setSongs(list)
       setPlaylists(lists)
+      setRequests(marked)
       setOffline(false)
       void saveSnapshot({ songs: list, playlists: lists, savedAt: Date.now() }).catch(() => {})
     } catch (e) {
@@ -84,7 +92,9 @@ export default function App(): React.JSX.Element {
   const byId = useMemo(() => new Map(songs.map((s) => [s.id, s])), [songs])
   const selected = playlists.find((p) => p.id === playlistId) ?? null
   const shown = useMemo(() => {
-    const base = selected ? selected.songIds.map((id) => byId.get(id)).filter((s): s is CloudSong => !!s) : songs
+    const base = selected
+      ? selected.songIds.map((id) => byId.get(id)).filter((s): s is CloudSong => !!s)
+      : songs
     return offline || onlyDownloaded ? base.filter((s) => localUri(s.id)) : base
   }, [selected, byId, songs, offline, onlyDownloaded, localUri])
 
@@ -122,38 +132,72 @@ export default function App(): React.JSX.Element {
     )
   }
 
+  const retryRequest = async (r: SongRequest): Promise<void> => {
+    if (!cloud) return
+    try {
+      const fresh = await cloud.request(r)
+      setRequests((list) => list.map((x) => (x.id === r.id ? fresh : x)))
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+  const cancelRequest = async (r: SongRequest): Promise<void> => {
+    if (!cloud) return
+    try {
+      await cloud.cancelRequest(r.id)
+      setRequests((list) => list.filter((x) => x.id !== r.id))
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
   return (
     <View style={styles.root}>
       <StatusBar style="light" />
-      <LibraryScreen
-        songs={shown}
-        total={songs.length}
-        title={selected?.name ?? 'Tu música'}
-        loading={loading}
-        error={error ?? downloads.error}
-        offline={offline}
-        onRefresh={refresh}
-        currentId={player.current?.id ?? null}
-        onPlay={(id) => void player.play(id)}
-        onShuffleAll={(visible) => {
-          player.setShuffle(true)
-          const pick = visible[Math.floor(Math.random() * visible.length)]
-          if (pick) void player.play(pick.id)
-        }}
-        onOpenSettings={() => setEditing(true)}
-        onVisibleChange={setQueue}
-        playlists={playlists.map((p) => ({ id: p.id, name: p.name, count: p.songIds.length }))}
-        playlistId={selected?.id ?? null}
-        onSelectPlaylist={setPlaylistId}
-        downloadedCount={downloads.count}
-        onlyDownloaded={onlyDownloaded}
-        onToggleOnlyDownloaded={() => setOnlyDownloaded((v) => !v)}
-        downloadState={downloadState}
-        onDownload={downloads.download}
-        onRemoveDownload={(s) => downloads.remove([s.id])}
-        progress={downloads.progress}
-        onCancelDownloads={downloads.cancel}
-      />
+      {searching && cloud ? (
+        <SearchScreen
+          cloud={cloud}
+          onClose={() => {
+            setSearching(false)
+            void refresh() // songs the computer already brought in
+          }}
+          onRequested={(r) => setRequests((list) => [...list.filter((x) => x.id !== r.id), r])}
+        />
+      ) : (
+        <LibraryScreen
+          songs={shown}
+          total={songs.length}
+          title={selected?.name ?? 'Tu música'}
+          loading={loading}
+          error={error ?? downloads.error}
+          offline={offline}
+          onRefresh={refresh}
+          currentId={player.current?.id ?? null}
+          onPlay={(id) => void player.play(id)}
+          onShuffleAll={(visible) => {
+            player.setShuffle(true)
+            const pick = visible[Math.floor(Math.random() * visible.length)]
+            if (pick) void player.play(pick.id)
+          }}
+          onOpenSettings={() => setEditing(true)}
+          onVisibleChange={setQueue}
+          playlists={playlists.map((p) => ({ id: p.id, name: p.name, count: p.songIds.length }))}
+          playlistId={selected?.id ?? null}
+          onSelectPlaylist={setPlaylistId}
+          downloadedCount={downloads.count}
+          onlyDownloaded={onlyDownloaded}
+          onToggleOnlyDownloaded={() => setOnlyDownloaded((v) => !v)}
+          downloadState={downloadState}
+          onDownload={downloads.download}
+          onRemoveDownload={(s) => downloads.remove([s.id])}
+          progress={downloads.progress}
+          onCancelDownloads={downloads.cancel}
+          onOpenSearch={() => setSearching(true)}
+          requests={requests}
+          onCancelRequest={(r) => void cancelRequest(r)}
+          onRetryRequest={(r) => void retryRequest(r)}
+        />
+      )}
       <PlayerBar player={player} />
     </View>
   )

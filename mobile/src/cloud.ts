@@ -1,12 +1,18 @@
 // The phone's client for your Worker (contract: ../../src/shared/api.ts).
-// Read-only: health, the songs, the playlists, and a signed URL to stream (or download) one.
+// Health, songs, playlists, a signed URL to stream (or download) one; and
+// searching YouTube + marking songs for the computer to download.
 // No React Native imports, so it is tested against the real Worker with Vitest.
 import {
   API_PREFIX,
   type CloudPlaylist,
   type CloudSong,
   type ListPlaylistsResponse,
+  type ListRequestsResponse,
   type ListSongsResponse,
+  type RecommendationsResponse,
+  type SearchHit,
+  type SearchResponse,
+  type SongRequest,
   type StreamResponse
 } from '../../src/shared/api'
 
@@ -24,6 +30,14 @@ export interface Cloud {
   health(): Promise<void>
   listSongs(): Promise<CloudSong[]>
   listPlaylists(): Promise<CloudPlaylist[]>
+  search(query: string): Promise<SearchResponse['results']>
+  /** "Recomendado para ti", computed by the computer. */
+  recommendations(): Promise<RecommendationsResponse>
+  /** Songs marked here, waiting for the computer. */
+  listRequests(): Promise<SongRequest[]>
+  /** Marks a song for the computer to download. */
+  request(hit: SearchHit): Promise<SongRequest>
+  cancelRequest(id: string): Promise<void>
   /** A signed R2 URL, valid for 15 minutes. */
   streamUrl(id: string): Promise<string>
 }
@@ -39,16 +53,26 @@ export function normalizeUrl(raw: string): string {
   }
 }
 
-export function createCloud(opts: { url: string; token: string; fetch?: typeof fetch; timeoutMs?: number }): Cloud {
+export function createCloud(opts: {
+  url: string
+  token: string
+  fetch?: typeof fetch
+  timeoutMs?: number
+}): Cloud {
   const base = normalizeUrl(opts.url)
   if (!base) throw new CloudError('La URL debe empezar con https://', 0)
   const doFetch = opts.fetch ?? globalThis.fetch
 
-  async function call<T>(path: string): Promise<T> {
+  async function call<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
     let res: Response
     try {
       res = await doFetch(`${base}${API_PREFIX}${path}`, {
-        headers: { authorization: `Bearer ${opts.token.trim()}` },
+        method,
+        headers: {
+          authorization: `Bearer ${opts.token.trim()}`,
+          ...(body !== undefined ? { 'content-type': 'application/json' } : {})
+        },
+        body: body !== undefined ? JSON.stringify(body) : undefined,
         signal: AbortSignal.timeout(opts.timeoutMs ?? 15_000)
       })
     } catch {
@@ -74,6 +98,33 @@ export function createCloud(opts: { url: string; token: string; fetch?: typeof f
           throw e
         }
       ),
-    streamUrl: (id) => call<StreamResponse>(`/songs/${encodeURIComponent(id)}/stream`).then((r) => r.url)
+    search: (q) =>
+      call<SearchResponse>(`/search?q=${encodeURIComponent(q.trim())}`).then((r) => r.results),
+    recommendations: () =>
+      call<RecommendationsResponse>('/recommendations').catch((e: unknown) => {
+        if (e instanceof CloudError && e.status === 404)
+          return { basedOn: [], results: [], updatedAt: null }
+        throw e
+      }),
+    listRequests: () =>
+      call<ListRequestsResponse>('/requests').then(
+        (r) => r.requests,
+        (e: unknown) => {
+          if (e instanceof CloudError && e.status === 404) return []
+          throw e
+        }
+      ),
+    request: (hit) =>
+      call<SongRequest>('/requests', 'POST', {
+        id: hit.id,
+        title: hit.title,
+        artists: hit.artists,
+        durationSec: hit.durationSec,
+        coverUrl: hit.coverUrl
+      }),
+    cancelRequest: (id) =>
+      call<unknown>(`/requests/${encodeURIComponent(id)}`, 'DELETE').then(() => undefined),
+    streamUrl: (id) =>
+      call<StreamResponse>(`/songs/${encodeURIComponent(id)}/stream`).then((r) => r.url)
   }
 }

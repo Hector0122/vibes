@@ -129,3 +129,77 @@ export function validatePlaylists(body: unknown): string | null {
   }
   return null
 }
+
+// Adding songs from the phone. The phone searches through the Worker (which
+// holds the YouTube Data API key) and marks songs; the desktop app, when open,
+// downloads the marked songs with yt-dlp, uploads them and clears the mark.
+
+export const MAX_QUERY = 200
+export const MAX_REQUESTS = 500
+
+export interface SearchHit {
+  id: string
+  title: string
+  artists: string
+  durationSec: number | null
+  coverUrl: string | null
+}
+
+export interface SearchResponse {
+  /** inCloud: already in your library; requested: already marked. */
+  results: (SearchHit & { inCloud: boolean; requested: boolean })[]
+}
+
+export interface SongRequest extends SearchHit {
+  /** pending: waiting for the desktop; failed: the desktop couldn't get it (see error). */
+  status: 'pending' | 'failed'
+  error: string | null
+  createdAt: number
+}
+
+export interface ListRequestsResponse {
+  requests: SongRequest[]
+}
+
+/** Returns an error message, or null when the hit can be marked. */
+export function validateHit(h: unknown): string | null {
+  if (!h || typeof h !== 'object') return 'Invalid song'
+  const x = h as Record<string, unknown>
+  if (typeof x.id !== 'string' || !YOUTUBE_ID_RE.test(x.id)) return 'Invalid song id'
+  if (typeof x.title !== 'string' || !x.title.trim() || x.title.length > 300) return 'Invalid title'
+  if (typeof x.artists !== 'string' || x.artists.length > 500) return 'Invalid artists'
+  if (x.coverUrl !== null && (typeof x.coverUrl !== 'string' || x.coverUrl.length > 1000)) return 'Invalid coverUrl'
+  const d = x.durationSec
+  if (d !== null && (typeof d !== 'number' || !Number.isFinite(d) || d < 0)) return 'Invalid durationSec'
+  return null
+}
+
+// "Recomendado para ti" on the phone: the desktop computes it (YouTube mixes of
+// library songs, with yt-dlp) and uploads it; the phone shows it and marks songs.
+
+export const MAX_RECOMMENDATIONS = 60
+
+export interface PutRecommendationsRequest {
+  /** Titles of the library songs the suggestions came from. */
+  basedOn: string[]
+  results: SearchHit[]
+}
+
+export interface RecommendationsResponse {
+  basedOn: string[]
+  results: SearchResponse['results']
+  /** When the desktop last sent them; null = never. */
+  updatedAt: number | null
+}
+
+export function validateRecommendations(body: unknown): string | null {
+  const b = body as Partial<PutRecommendationsRequest> | null
+  if (!b || !Array.isArray(b.basedOn) || !Array.isArray(b.results)) return 'basedOn and results must be arrays'
+  if (b.basedOn.length > 20 || !b.basedOn.every((t) => typeof t === 'string' && t.length <= 300)) return 'Invalid basedOn'
+  if (b.results.length > MAX_RECOMMENDATIONS) return 'Too many results'
+  for (const h of b.results) {
+    const e = validateHit(h)
+    if (e) return e
+  }
+  return null
+}

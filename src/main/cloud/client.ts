@@ -6,6 +6,8 @@ import {
   type ApiError,
   type CloudSong,
   type ListPlaylistsResponse,
+  type ListRequestsResponse,
+  type PutRecommendationsRequest,
   type ListSongsResponse,
   type PutPlaylistsRequest,
   type UploadBeginRequest,
@@ -118,6 +120,23 @@ export class CloudClient {
   /** Replaces the cloud's playlists with these (the desktop is the source of truth). */
   putPlaylists(req: PutPlaylistsRequest): Promise<ListPlaylistsResponse> {
     return this.api('PUT', '/playlists', req)
+  }
+
+  /** Songs marked on the phone, waiting to be downloaded here. */
+  listRequests(): Promise<ListRequestsResponse> {
+    return this.api('GET', '/requests')
+  }
+
+  async putRecommendations(req: PutRecommendationsRequest): Promise<void> {
+    await this.api('PUT', '/recommendations', req)
+  }
+
+  async deleteRequest(id: string): Promise<void> {
+    await this.api('DELETE', `/requests/${id}`)
+  }
+
+  async failRequest(id: string, error: string): Promise<void> {
+    await this.api('POST', `/requests/${id}/fail`, { error })
   }
 
   async putFile(url: string, data: Buffer): Promise<void> {

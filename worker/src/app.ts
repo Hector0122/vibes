@@ -1,18 +1,28 @@
 import {
   API_PREFIX,
   MAX_AUDIO_BYTES,
+  MAX_QUERY,
+  MAX_REQUESTS,
   PRESIGN_EXPIRES_SECONDS,
   SHA256_RE,
   YOUTUBE_ID_RE,
   pickMeta,
   validateMeta,
+  validateHit,
+  validateRecommendations,
   validatePlaylists,
   type ApiError,
   type CloudPlaylist,
   type ListPlaylistsResponse,
   type PutPlaylistsRequest,
   type CloudSong,
+  type ListRequestsResponse,
+  type PutRecommendationsRequest,
+  type RecommendationsResponse,
   type ListSongsResponse,
+  type SearchHit,
+  type SearchResponse,
+  type SongRequest,
   type SongMeta,
   type StreamResponse,
   type UploadBeginRequest,
@@ -21,6 +31,29 @@ import {
 import { isAuthorized } from './auth'
 import type { Env } from './env'
 import type { Presigner } from './presign'
+import { searchYoutube, YoutubeError } from './youtube'
+
+interface RequestRow {
+  id: string
+  title: string
+  artists: string
+  duration_sec: number | null
+  cover_url: string | null
+  status: 'pending' | 'failed'
+  error: string | null
+  created_at: number
+}
+
+const toRequest = (r: RequestRow): SongRequest => ({
+  id: r.id,
+  title: r.title,
+  artists: r.artists,
+  durationSec: r.duration_sec,
+  coverUrl: r.cover_url,
+  status: r.status,
+  error: r.error,
+  createdAt: r.created_at
+})
 
 interface PlaylistRow {
   id: string
@@ -83,7 +116,12 @@ export interface App {
   fetch(request: Request, env: Env): Promise<Response>
 }
 
-export function createApp(presign: Presigner): App {
+export interface AppOptions {
+  /** For calls to YouTube (tests pass a fake). */
+  fetch?: typeof fetch
+}
+
+export function createApp(presign: Presigner, opts: AppOptions = {}): App {
   const getSong = (env: Env, id: string): Promise<SongRow | null> =>
     env.DB.prepare('SELECT id, meta, size, sha256, status, updated_at FROM songs WHERE id = ?')
       .bind(id)
@@ -185,6 +223,118 @@ export function createApp(presign: Presigner): App {
     return listPlaylists(env)
   }
 
+  async function search(env: Env, url: URL): Promise<SearchResponse> {
+    const q = (url.searchParams.get('q') ?? '').trim()
+    if (!q || q.length > MAX_QUERY) fail(400, 'Escribe qué buscar')
+    if (!env.YOUTUBE_API_KEY) {
+      fail(501, 'Falta la API key de YouTube en tu nube: wrangler secret put YOUTUBE_API_KEY')
+    }
+    let hits: SearchHit[]
+    try {
+      hits = await searchYoutube(env.YOUTUBE_API_KEY!, q, opts.fetch ?? fetch)
+    } catch (e) {
+      if (e instanceof YoutubeError) fail(e.status, e.message)
+      throw e
+    }
+    return { results: await flag(env, hits) }
+  }
+
+  /** Adds whether each hit is already in the cloud, or already marked. */
+  async function flag(env: Env, hits: SearchHit[]): Promise<SearchResponse['results']> {
+    if (hits.length === 0) return []
+    const marks = hits.map(() => '?').join(',')
+    const ids = hits.map((h) => h.id)
+    const inCloud = await env.DB.prepare(`SELECT id FROM songs WHERE status = 'complete' AND id IN (${marks})`)
+      .bind(...ids)
+      .all<{ id: string }>()
+    const requested = await env.DB.prepare(`SELECT id FROM requests WHERE id IN (${marks})`)
+      .bind(...ids)
+      .all<{ id: string }>()
+    const c = new Set(inCloud.results.map((r) => r.id))
+    const r = new Set(requested.results.map((x) => x.id))
+    return hits.map((h) => ({ ...h, inCloud: c.has(h.id), requested: r.has(h.id) }))
+  }
+
+  async function getRecommendations(env: Env): Promise<RecommendationsResponse> {
+    const row = await env.DB.prepare('SELECT data, updated_at FROM recommendations WHERE id = 1').first<{
+      data: string
+      updated_at: number
+    }>()
+    if (!row) return { basedOn: [], results: [], updatedAt: null }
+    const data = JSON.parse(row.data) as PutRecommendationsRequest
+    // Songs added since (from the phone or the computer) drop out.
+    const results = (await flag(env, data.results)).filter((h) => !h.inCloud)
+    return { basedOn: data.basedOn, results, updatedAt: row.updated_at }
+  }
+
+  async function putRecommendations(env: Env, request: Request): Promise<RecommendationsResponse> {
+    const body = await readJson<PutRecommendationsRequest>(request)
+    const invalid = validateRecommendations(body)
+    if (invalid) fail(400, invalid)
+    const data: PutRecommendationsRequest = {
+      basedOn: body.basedOn,
+      results: body.results.map((h) => ({
+        id: h.id,
+        title: h.title.trim(),
+        artists: h.artists,
+        durationSec: h.durationSec,
+        coverUrl: h.coverUrl
+      }))
+    }
+    await env.DB.prepare(
+      'INSERT INTO recommendations (id, data, updated_at) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at'
+    )
+      .bind(JSON.stringify(data), Date.now())
+      .run()
+    return getRecommendations(env)
+  }
+
+  async function listRequests(env: Env): Promise<ListRequestsResponse> {
+    const { results } = await env.DB.prepare(
+      'SELECT id, title, artists, duration_sec, cover_url, status, error, created_at FROM requests ORDER BY created_at'
+    ).all<RequestRow>()
+    return { requests: results.map(toRequest) }
+  }
+
+  /** Marks a song for the desktop. Marking it again (e.g. after it failed) puts it back in line. */
+  async function addRequest(env: Env, request: Request): Promise<SongRequest> {
+    const hit = await readJson<SearchHit>(request)
+    const invalid = validateHit(hit)
+    if (invalid) fail(400, invalid)
+    const song = await getSong(env, hit.id)
+    if (song?.status === 'complete') fail(409, 'Ya está en tu nube')
+    const count = await env.DB.prepare('SELECT COUNT(*) AS n FROM requests').first<{ n: number }>()
+    const exists = await env.DB.prepare('SELECT id FROM requests WHERE id = ?').bind(hit.id).first()
+    if (!exists && (count?.n ?? 0) >= MAX_REQUESTS) fail(429, 'Tienes demasiadas canciones pendientes')
+    const now = Date.now()
+    await env.DB.prepare(
+      `INSERT INTO requests (id, title, artists, duration_sec, cover_url, status, error, created_at)
+       VALUES (?, ?, ?, ?, ?, 'pending', NULL, ?)
+       ON CONFLICT(id) DO UPDATE SET status = 'pending', error = NULL`
+    )
+      .bind(hit.id, hit.title.trim(), hit.artists, hit.durationSec, hit.coverUrl, now)
+      .run()
+    const row = await env.DB.prepare(
+      'SELECT id, title, artists, duration_sec, cover_url, status, error, created_at FROM requests WHERE id = ?'
+    )
+      .bind(hit.id)
+      .first<RequestRow>()
+    return toRequest(row!)
+  }
+
+  async function failRequest(env: Env, id: string, request: Request): Promise<{ ok: true }> {
+    const body = await readJson<{ error?: unknown }>(request)
+    const error = String(body?.error ?? 'Error').slice(0, 500)
+    const r = await env.DB.prepare("UPDATE requests SET status = 'failed', error = ? WHERE id = ?").bind(error, id).run()
+    if (!r.meta.changes) fail(404, 'Request not found')
+    return { ok: true }
+  }
+
+  async function deleteRequest(env: Env, id: string): Promise<{ deleted: true }> {
+    await env.DB.prepare('DELETE FROM requests WHERE id = ?').bind(id).run()
+    return { deleted: true }
+  }
+
   async function route(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
     if (!url.pathname.startsWith(API_PREFIX + '/')) fail(404, 'Not found')
@@ -196,6 +346,19 @@ export function createApp(presign: Presigner): App {
     if (path === '/playlists' && method === 'GET') return json(await listPlaylists(env))
     if (path === '/playlists' && method === 'PUT') return json(await putPlaylists(env, request))
     if (path === '/playlists') return fail(405, 'Method not allowed')
+    if (path === '/search' && method === 'GET') return json(await search(env, url))
+    if (path === '/recommendations' && method === 'GET') return json(await getRecommendations(env))
+    if (path === '/recommendations' && method === 'PUT') return json(await putRecommendations(env, request))
+    if (path === '/requests' && method === 'GET') return json(await listRequests(env))
+    if (path === '/requests' && method === 'POST') return json(await addRequest(env, request))
+
+    const rq = /^\/requests\/([^/]+)(\/fail)?$/.exec(path)
+    if (rq) {
+      if (!YOUTUBE_ID_RE.test(rq[1])) fail(400, 'Invalid song id')
+      if (!rq[2] && method === 'DELETE') return json(await deleteRequest(env, rq[1]))
+      if (rq[2] && method === 'POST') return json(await failRequest(env, rq[1], request))
+      return fail(405, 'Method not allowed')
+    }
 
     const m = /^\/songs\/([^/]+)(\/(upload|commit|stream))?$/.exec(path)
     if (!m) return fail(404, 'Not found')

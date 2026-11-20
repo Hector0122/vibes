@@ -13,7 +13,7 @@ import {
   TextInput,
   View
 } from 'react-native'
-import type { CloudSong } from '../../../src/shared/api'
+import type { CloudSong, SongRequest } from '../../../src/shared/api'
 import { colors, fmtTime } from '../theme'
 import type { DownloadProgress } from '../useOffline'
 
@@ -56,11 +56,20 @@ interface Props {
   onRemoveDownload?: (song: CloudSong) => void
   progress?: DownloadProgress | null
   onCancelDownloads?: () => void
+
+  /** Opens the YouTube search (to mark songs for the computer). */
+  onOpenSearch?: () => void
+  /** Songs marked here, waiting for the computer. */
+  requests?: SongRequest[]
+  onCancelRequest?: (r: SongRequest) => void
+  onRetryRequest?: (r: SongRequest) => void
 }
 
 export const filterSongs = (songs: CloudSong[], query: string): CloudSong[] => {
   const q = query.trim().toLowerCase()
-  return q ? songs.filter((s) => s.title.toLowerCase().includes(q) || s.artists.toLowerCase().includes(q)) : songs
+  return q
+    ? songs.filter((s) => s.title.toLowerCase().includes(q) || s.artists.toLowerCase().includes(q))
+    : songs
 }
 
 /** Your cloud library: playlists, search, shuffle, downloads, tap to play. */
@@ -76,15 +85,21 @@ export function LibraryScreen(p: Props): React.JSX.Element {
   }, [visible, report])
 
   const confirmRemove = (s: CloudSong): void =>
-    Alert.alert('Quitar del teléfono', `“${s.title}” seguirá en tu nube, pero ya no sonará sin internet.`, [
-      { text: 'Cancelar', style: 'cancel' },
-      { text: 'Quitar', style: 'destructive', onPress: () => p.onRemoveDownload?.(s) }
-    ])
+    Alert.alert(
+      'Quitar del teléfono',
+      `“${s.title}” seguirá en tu nube, pero ya no sonará sin internet.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Quitar', style: 'destructive', onPress: () => p.onRemoveDownload?.(s) }
+      ]
+    )
 
   const emptyText = (): string => {
     if (p.songs.length > 0) return 'Nada coincide con tu búsqueda.'
-    if (p.offline) return 'Sin conexión y no tienes canciones descargadas aquí. Descárgalas con ⬇ cuando tengas internet.'
-    if (p.onlyDownloaded) return 'Todavía no descargas canciones de esta lista. Toca ⬇ para tenerlas sin internet.'
+    if (p.offline)
+      return 'Sin conexión y no tienes canciones descargadas aquí. Descárgalas con ⬇ cuando tengas internet.'
+    if (p.onlyDownloaded)
+      return 'Todavía no descargas canciones de esta lista. Toca ⬇ para tenerlas sin internet.'
     if (p.playlistId) return 'Esta playlist está vacía, o sus canciones aún no están en la nube.'
     return 'Tu nube está vacía. Sube tu música desde Vibes en la computadora (“Subir a la nube”).'
   }
@@ -95,7 +110,9 @@ export function LibraryScreen(p: Props): React.JSX.Element {
       style={styles.list}
       data={visible}
       keyExtractor={(s) => s.id}
-      refreshControl={<RefreshControl refreshing={p.loading} onRefresh={p.onRefresh} tintColor={colors.pink} />}
+      refreshControl={
+        <RefreshControl refreshing={p.loading} onRefresh={p.onRefresh} tintColor={colors.pink} />
+      }
       keyboardShouldPersistTaps="handled"
       ListHeaderComponent={
         <View style={styles.header}>
@@ -106,6 +123,11 @@ export function LibraryScreen(p: Props): React.JSX.Element {
                 {p.title}
               </Text>
             </View>
+            {p.onOpenSearch && !p.offline && (
+              <Pressable onPress={p.onOpenSearch} accessibilityLabel="Agregar música" hitSlop={12}>
+                <Ionicons name="add-circle-outline" size={28} color={colors.muted} />
+              </Pressable>
+            )}
             <Pressable onPress={p.onOpenSettings} accessibilityLabel="Nube" hitSlop={12}>
               <Ionicons name="cloud-outline" size={26} color={colors.muted} />
             </Pressable>
@@ -126,9 +148,58 @@ export function LibraryScreen(p: Props): React.JSX.Element {
             </View>
           )}
 
+          {!p.playlistId && !!p.requests?.length && (
+            <View testID="requests" style={styles.requests}>
+              <Text style={styles.requestsTitle}>Esperando a la compu ({p.requests.length})</Text>
+              {p.requests.map((r) => (
+                <View key={r.id} testID={`request-${r.id}`} style={styles.requestRow}>
+                  <Ionicons
+                    name={r.status === 'failed' ? 'alert-circle-outline' : 'time-outline'}
+                    size={18}
+                    color={r.status === 'failed' ? colors.red : colors.faint}
+                  />
+                  <View style={styles.rowText}>
+                    <Text numberOfLines={1} style={styles.requestTitle}>
+                      {r.title} · {r.artists}
+                    </Text>
+                    {r.status === 'failed' && (
+                      <Text numberOfLines={2} style={styles.requestError}>
+                        {r.error}
+                      </Text>
+                    )}
+                  </View>
+                  {r.status === 'failed' && (
+                    <Pressable
+                      hitSlop={8}
+                      accessibilityLabel={`Reintentar: ${r.title}`}
+                      onPress={() => p.onRetryRequest?.(r)}
+                    >
+                      <Ionicons name="refresh" size={18} color={colors.pinkSoft} />
+                    </Pressable>
+                  )}
+                  <Pressable
+                    hitSlop={8}
+                    accessibilityLabel={`Cancelar: ${r.title}`}
+                    onPress={() => p.onCancelRequest?.(r)}
+                  >
+                    <Ionicons name="close" size={18} color={colors.faint} />
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+          )}
+
           {!!p.playlists?.length && (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-              <Chip label="Todas" active={!p.playlistId} onPress={() => p.onSelectPlaylist?.(null)} />
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.chips}
+            >
+              <Chip
+                label="Todas"
+                active={!p.playlistId}
+                onPress={() => p.onSelectPlaylist?.(null)}
+              />
               {p.playlists.map((pl) => (
                 <Chip
                   key={pl.id}
@@ -226,7 +297,10 @@ export function LibraryScreen(p: Props): React.JSX.Element {
               </View>
             )}
             <View style={styles.rowText}>
-              <Text numberOfLines={1} style={[styles.songTitle, isCurrent && { color: colors.pinkSoft }]}>
+              <Text
+                numberOfLines={1}
+                style={[styles.songTitle, isCurrent && { color: colors.pinkSoft }]}
+              >
                 {s.title}
               </Text>
               <Text numberOfLines={1} style={styles.artist}>
@@ -237,7 +311,11 @@ export function LibraryScreen(p: Props): React.JSX.Element {
             {p.onDownload && (
               <View style={styles.dl}>
                 {st === 'downloading' ? (
-                  <ActivityIndicator testID={`downloading-${s.id}`} size="small" color={colors.pink} />
+                  <ActivityIndicator
+                    testID={`downloading-${s.id}`}
+                    size="small"
+                    color={colors.pink}
+                  />
                 ) : st === 'queued' ? (
                   <Ionicons name="time-outline" size={20} color={colors.faint} />
                 ) : st === 'done' ? (
@@ -249,7 +327,11 @@ export function LibraryScreen(p: Props): React.JSX.Element {
                     <Ionicons name="checkmark-circle" size={22} color={colors.pink} />
                   </Pressable>
                 ) : p.offline ? null : (
-                  <Pressable accessibilityLabel={`Descargar: ${s.title}`} hitSlop={10} onPress={() => p.onDownload?.([s])}>
+                  <Pressable
+                    accessibilityLabel={`Descargar: ${s.title}`}
+                    hitSlop={10}
+                    onPress={() => p.onDownload?.([s])}
+                  >
                     <Ionicons name="arrow-down-circle-outline" size={22} color={colors.faint} />
                   </Pressable>
                 )}
@@ -279,8 +361,29 @@ function Chip(props: { label: string; active: boolean; onPress: () => void }): R
 
 const styles = StyleSheet.create({
   list: { flex: 1, backgroundColor: colors.bg },
-  header: { paddingHorizontal: 20, paddingTop: 64, paddingBottom: 12, backgroundColor: 'rgba(139,92,246,0.18)' },
-  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12 },
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 64,
+    paddingBottom: 12,
+    backgroundColor: 'rgba(139,92,246,0.18)'
+  },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    gap: 16
+  },
+  requests: {
+    marginTop: 14,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    gap: 8
+  },
+  requestsTitle: { color: colors.muted, fontSize: 12, fontWeight: '700', letterSpacing: 1 },
+  requestRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  requestTitle: { color: colors.text, fontSize: 14 },
+  requestError: { color: colors.red, fontSize: 12, marginTop: 2 },
   kicker: { color: colors.muted, fontSize: 11, fontWeight: '700', letterSpacing: 2 },
   title: { color: colors.text, fontSize: 34, fontWeight: '800', marginTop: 2 },
   count: { color: colors.muted, fontSize: 13, marginTop: 6 },
@@ -336,7 +439,13 @@ const styles = StyleSheet.create({
   link: { color: colors.pinkSoft, fontSize: 14, fontWeight: '600' },
   error: { color: colors.red, marginTop: 12, fontSize: 14 },
   empty: { color: colors.faint, textAlign: 'center', padding: 32, fontSize: 15, lineHeight: 22 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 8 },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 8
+  },
   rowActive: { backgroundColor: colors.surface },
   cover: { width: 48, height: 48, borderRadius: 8, backgroundColor: '#27272a' },
   coverEmpty: { alignItems: 'center', justifyContent: 'center' },

@@ -51,13 +51,17 @@ los instaladores como *Artifacts* de la corrida.
 - **Sin internet**: ⬇ en cada canción, o "Descargar las N" para toda la lista o playlist. Las descargadas
   suenan desde el teléfono; sin conexión la app abre con tu última biblioteca y solo muestra lo descargado.
   El botón 📱 filtra a "solo descargadas"; ✓ quita una del teléfono (sigue en la nube).
+- **Agregar música** (➕ arriba): busca en YouTube (con tu API key, ver abajo) o elige de "Recomendado para
+  ti", y toca **Agregar**. La canción queda en "Esperando a la compu": la próxima vez que Vibes esté abierto en
+  la computadora (revisa cada 2 minutos) la descarga con yt-dlp, la sube y aparece en el celular. Si no se
+  pudo, ves el motivo y puedes reintentar o cancelar.
 - Para desarrollo: `cd mobile && pnpm install && pnpm start` y escanea el QR con **Expo Go**.
 
 ### Pendiente / siguiente
 
 - Probar la APK 1.0.1 en un celular real y en Waydroid (las pruebas automáticas pasan; en un teléfono aún no).
 - El conteo de reproducciones vive solo en la computadora.
-- Celular: buscar y marcar canciones para que la computadora las descargue; siguiente/anterior en la pantalla bloqueada.
+- Celular: siguiente/anterior en la pantalla bloqueada; vista previa de resultados de YouTube.
 - Opcional: Groq para pedir música con palabras ("algo tranquilo para trabajar").
 
 ## Requisitos
@@ -103,8 +107,8 @@ pnpm exec wrangler d1 create vibes      # copia el database_id a wrangler.toml
 pnpm migrate:remote
 ```
 
-> **Actualizando de una versión anterior:** las playlists necesitan una tabla nueva. Desde `worker/`
-> corre `pnpm migrate:remote && pnpm deploy` una vez.
+> **Actualizando de una versión anterior:** las playlists, la cola del celular y las sugerencias necesitan
+> tablas nuevas. Desde `worker/` corre `pnpm migrate:remote && pnpm deploy` una vez.
 
 Crea un token de R2 en el dashboard de Cloudflare → R2 → *Manage API tokens* → **Object Read &
 Write** solo para el bucket `vibes`. Luego guarda los secretos (nunca van en el repo):
@@ -117,6 +121,17 @@ pnpm exec wrangler secret put R2_ACCESS_KEY_ID
 pnpm exec wrangler secret put R2_SECRET_ACCESS_KEY
 pnpm deploy
 ```
+
+**Buscar desde el celular (opcional).** Saca una API key gratis en Google Cloud: crea un proyecto, habilita
+**YouTube Data API v3** y en *Credenciales → Crear credenciales → Clave de API* (restríngela a esa API).
+Guárdala solo en tu Worker; nunca va en la app ni en el repo:
+
+```bash
+pnpm exec wrangler secret put YOUTUBE_API_KEY
+```
+
+El límite gratis alcanza para unas 100 búsquedas al día. La key solo busca: las descargas las hace tu
+computadora con yt-dlp.
 
 En la app, botón **Nube**: pega la URL del Worker y tu token, prueba la conexión y guarda. El token se
 guarda cifrado con el llavero del sistema.
