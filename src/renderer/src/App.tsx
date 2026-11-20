@@ -1,7 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
-import type { LocalSong, TaskProgress } from '../../shared/types'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { CloudSettingsView, LocalSong, Playlist, SearchResult, SongRef, TaskProgress } from '../../shared/types'
 import { CloudSettings } from './CloudSettings'
+import { Home } from './Home'
+import { CloudIcon, DownloadIcon, HomeIcon, ImportIcon, LibraryIcon, ListIcon, Logo, PlusIcon, UploadIcon } from './icons'
+import { Library } from './Library'
 import { Player } from './Player'
+import { PlaylistView } from './PlaylistView'
+import { SONG_MIME } from './SongTable'
 
 const TASK_LABEL: Record<TaskProgress['task'], string> = {
   import: 'Copiando audio de eSound',
@@ -9,20 +14,90 @@ const TASK_LABEL: Record<TaskProgress['task'], string> = {
   upload: 'Subiendo a la nube'
 }
 
+/** The app's violet, used until (or when) a cover's color can't be read. */
+const DEFAULT_ACCENT = '139 92 246'
+
+// On/off switches remembered per machine; storage can be unavailable, so never fail on it.
+const loadFlag = (key: string): boolean => {
+  try {
+    return localStorage.getItem(key) === '1'
+  } catch {
+    return false
+  }
+}
+const saveFlag = (key: string, on: boolean): void => {
+  try {
+    localStorage.setItem(key, on ? '1' : '0')
+  } catch {
+    // not remembered this time
+  }
+}
+
+/** A search hit / recommendation as something the player can play. */
+export const toRef = (r: SearchResult): SongRef => ({
+  id: r.id,
+  title: r.title,
+  artists: r.artists,
+  album: null,
+  durationSec: r.durationSec,
+  coverUrl: r.coverUrl || null
+})
+
+/** What is playing when it isn't the library: a list from Inicio, a playlist, or the radio. */
+interface QueueSource {
+  label: string
+  tracks: SongRef[]
+}
+
 export default function App(): React.JSX.Element {
   const [songs, setSongs] = useState<LocalSong[]>([])
+  const [loaded, setLoaded] = useState(false)
   const [query, setQuery] = useState('')
   const [onlySaved, setOnlySaved] = useState(false)
   const [currentId, setCurrentId] = useState<string | null>(null)
+  const [playing, setPlaying] = useState(false)
+  const [shuffle, setShuffleState] = useState(() => loadFlag('vibes.shuffle'))
+  const [radio, setRadioState] = useState(() => loadFlag('vibes.radio'))
+  const [source, setSource] = useState<QueueSource | null>(null)
+  // Every non-library song that was queued, so one that is playing keeps its title
+  // and cover even after its list is closed ("Volver a mi biblioteca").
+  const seen = useRef(new Map<string, SongRef>())
   const [progress, setProgress] = useState<TaskProgress | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [cloud, setCloud] = useState<CloudSettingsView | null>(null)
+  // 'home' | 'library' | 'playlist:<id>'
+  const [view, setView] = useState<string>('home')
+  const [playlists, setPlaylists] = useState<Playlist[]>([])
+  const [newName, setNewName] = useState<string | null>(null) // "Nueva playlist" input open
+  const [dropTarget, setDropTarget] = useState<string | null>(null)
 
-  const refresh = (): Promise<void> => window.api.listSongs().then(setSongs)
+  const refresh = (): Promise<void> =>
+    window.api.listSongs().then((list) => {
+      setSongs(list)
+      setLoaded(true)
+    })
+  const refreshCloud = (): Promise<void> => window.api.getCloudSettings().then(setCloud)
+  const refreshPlaylists = (): Promise<void> => window.api.listPlaylists().then(setPlaylists)
+  const clean = (err: unknown): string =>
+    (err as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+
+  async function addToPlaylist(playlistId: string, songId: string): Promise<void> {
+    const pl = playlists.find((x) => x.id === playlistId)
+    try {
+      const n = await window.api.addToPlaylist(playlistId, [songId])
+      setMessage(n ? `Agregada a “${pl?.name}”` : `Ya estaba en “${pl?.name}”`)
+    } catch (err) {
+      setMessage(clean(err))
+    }
+    await refreshPlaylists()
+  }
 
   useEffect(() => {
     refresh()
+    refreshCloud()
+    refreshPlaylists()
     const offSong = window.api.onSongUpdated((s) =>
       setSongs((prev) => prev.map((p) => (p.id === s.id ? s : p)))
     )
@@ -32,6 +107,37 @@ export default function App(): React.JSX.Element {
       offProgress()
     }
   }, [])
+
+  const setShuffle = (on: boolean): void => {
+    saveFlag('vibes.shuffle', on)
+    setShuffleState(on)
+  }
+  const setRadio = (on: boolean): void => {
+    saveFlag('vibes.radio', on)
+    setRadioState(on)
+  }
+
+  /** Play from the library (clears any other list). */
+  const playFromLibrary = (id: string): void => {
+    setSource(null)
+    setCurrentId(id)
+  }
+  /** Play `id` within a list that isn't the library (Inicio cards, playlist, radio). */
+  const playFromList = (label: string, tracks: SongRef[], id: string): void => {
+    for (const t of tracks) seen.current.set(t.id, t)
+    setSource({ label, tracks })
+    setCurrentId(id)
+  }
+
+  async function startRadio(last: SongRef): Promise<void> {
+    try {
+      const tracks = (await window.api.radio(last.id)).map(toRef)
+      if (tracks.length) return playFromList(`Radio: parecidas a ${last.title}`, tracks, tracks[0].id)
+      setMessage('La radio no encontró canciones nuevas parecidas')
+    } catch {
+      setMessage('No se pudo cargar la radio. ¿Estás sin internet?')
+    }
+  }
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -43,7 +149,28 @@ export default function App(): React.JSX.Element {
   }, [songs, query, onlySaved])
 
   const playable = visible.filter((s) => s.file)
-  const current = songs.find((s) => s.id === currentId) ?? null
+  const openPlaylist = view.startsWith('playlist:') ? playlists.find((p) => `playlist:${p.id}` === view) ?? null : null
+  const byId = new Map(songs.map((s) => [s.id, s]))
+  const playlistSongs = (openPlaylist?.songIds ?? []).map((id) => byId.get(id)).filter((s): s is LocalSong => !!s)
+  const playlistPlayable = playlistSongs.filter((s) => s.file)
+  const queue: SongRef[] = source?.tracks ?? playable
+  const libraryIds = new Set(songs.filter((s) => s.file).map((s) => s.id))
+  const current: SongRef | null =
+    songs.find((s) => s.id === currentId) ?? (currentId ? seen.current.get(currentId) : undefined) ?? null
+
+  // The UI takes the color of the cover that is playing.
+  const [accent, setAccent] = useState(DEFAULT_ACCENT)
+  useEffect(() => {
+    const url = current?.coverUrl
+    if (!url) return setAccent(DEFAULT_ACCENT)
+    let stale = false
+    window.api.coverColor(url).then((c) => {
+      if (!stale) setAccent(c ?? DEFAULT_ACCENT)
+    })
+    return () => {
+      stale = true
+    }
+  }, [current?.coverUrl])
 
   async function runTask(label: string, fn: () => Promise<string>): Promise<void> {
     setBusy(true)
@@ -61,114 +188,315 @@ export default function App(): React.JSX.Element {
   }
 
   const failedText = (p: TaskProgress): string => (p.failed ? `, ${p.failed} con error` : '')
+  const cloudOn = !!cloud?.enabled && !!cloud.url && cloud.hasToken
+
+  const tools = [
+    {
+      label: 'Importar de eSound',
+      Icon: ImportIcon,
+      run: () =>
+        runTask('Importando de eSound', async () => {
+          const r = await window.api.importEsound()
+          return `eSound: ${r.added} nuevas, ${r.updated} actualizadas, ${r.copied} audios copiados, ${r.missing} sin audio`
+        })
+    },
+    {
+      label: 'Descargar faltantes',
+      Icon: DownloadIcon,
+      run: () =>
+        runTask('Descargando faltantes', async () => {
+          const p = await window.api.downloadMissing()
+          return `Descargadas ${p.done - p.failed} de ${p.total}${failedText(p)}`
+        })
+    },
+    {
+      label: 'Subir a la nube',
+      Icon: UploadIcon,
+      run: () =>
+        runTask('Subiendo a la nube', async () => {
+          const p = await window.api.uploadToCloud()
+          return `Subidas ${p.done - p.failed} de ${p.total}${failedText(p)}`
+        })
+    }
+  ]
 
   return (
-    <div className="flex h-screen flex-col">
-      <header className="flex flex-wrap items-center gap-2 border-b border-neutral-800 px-4 py-3">
-        <h1 className="mr-2 text-xl font-bold tracking-tight text-violet-400">Vibes</h1>
-        <button
-          className="btn"
-          disabled={busy}
-          onClick={() =>
-            runTask('Importando de eSound', async () => {
-              const r = await window.api.importEsound()
-              return `eSound: ${r.added} nuevas, ${r.updated} actualizadas, ${r.copied} audios copiados, ${r.missing} sin audio`
-            })
-          }
-        >
-          Importar de eSound
-        </button>
-        <button
-          className="btn"
-          disabled={busy}
-          onClick={() =>
-            runTask('Descargando faltantes', async () => {
-              const p = await window.api.downloadMissing()
-              return `Descargadas ${p.done - p.failed} de ${p.total}${failedText(p)}`
-            })
-          }
-        >
-          Descargar faltantes
-        </button>
-        <button
-          className="btn"
-          disabled={busy}
-          onClick={() =>
-            runTask('Subiendo a la nube', async () => {
-              const p = await window.api.uploadToCloud()
-              return `Subidas ${p.done - p.failed} de ${p.total}${failedText(p)}`
-            })
-          }
-        >
-          Subir a la nube
-        </button>
-        <button className="btn ml-auto" onClick={() => setShowSettings(true)}>
-          Nube
-        </button>
-      </header>
+    <div
+      className="flex h-screen flex-col"
+      data-accent={accent}
+      style={{ '--accent': accent } as React.CSSProperties}
+    >
+      {/* "stage": where the full-screen "Reproduciendo ahora" opens, above everything but the player. */}
+      <div id="stage" className="relative flex min-h-0 flex-1">
+        <aside className="flex w-60 shrink-0 flex-col gap-6 border-r border-white/5 bg-black/30 p-4">
+          <div className="flex items-center gap-2.5 px-2 pt-1">
+            <Logo className="h-8 w-8 drop-shadow-[0_4px_12px_rgba(236,72,153,0.35)]" />
+            <span className="text-xl font-bold tracking-tight">Vibes</span>
+          </div>
 
-      <div className="flex items-center gap-3 px-4 py-2 text-sm">
-        <input
-          className="w-72 rounded bg-neutral-900 px-3 py-1.5 outline-none focus:ring-1 focus:ring-violet-500"
-          placeholder="Buscar canción o artista"
-          aria-label="Buscar"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        <label className="flex items-center gap-1.5 text-neutral-400">
-          <input type="checkbox" checked={onlySaved} onChange={(e) => setOnlySaved(e.target.checked)} />
-          Solo guardadas
-        </label>
-        <span className="ml-auto text-neutral-500" data-testid="status">
-          {/* A progress event can arrive after the task's own reply: only show it while busy. */}
-          {busy && progress
-            ? `${TASK_LABEL[progress.task]}: ${progress.done}/${progress.total}${failedText(progress)}`
-            : message ?? `${songs.length} canciones`}
-        </span>
+          <nav className="space-y-1">
+            <button
+              className="nav-item"
+              aria-current={view === 'home' ? 'page' : undefined}
+              onClick={() => setView('home')}
+            >
+              <HomeIcon />
+              Inicio
+            </button>
+            <button
+              className="nav-item"
+              aria-label="Biblioteca"
+              aria-current={view === 'library' ? 'page' : undefined}
+              onClick={() => setView('library')}
+            >
+              <LibraryIcon />
+              <span className="flex-1">Biblioteca</span>
+              <span className="text-xs text-neutral-500">{songs.length}</span>
+            </button>
+          </nav>
+
+          <div className="-mt-2 flex min-h-0 flex-col space-y-1">
+            <div className="flex items-center justify-between px-3 pb-1">
+              <p className="text-[11px] font-semibold tracking-widest text-neutral-500 uppercase">Playlists</p>
+              <button
+                className="icon p-1"
+                aria-label="Nueva playlist"
+                title="Nueva playlist"
+                onClick={() => setNewName(newName === null ? '' : null)}
+              >
+                <PlusIcon className="h-4 w-4" />
+              </button>
+            </div>
+            {newName !== null && (
+              <form
+                className="px-1"
+                onSubmit={async (e) => {
+                  e.preventDefault()
+                  try {
+                    const pl = await window.api.createPlaylist(newName)
+                    setNewName(null)
+                    await refreshPlaylists()
+                    setView(`playlist:${pl.id}`)
+                  } catch (err) {
+                    setMessage(clean(err))
+                  }
+                }}
+              >
+                <input
+                  autoFocus
+                  className="field rounded-lg py-1.5"
+                  placeholder="Nombre, p. ej. Para manejar"
+                  aria-label="Nombre de la nueva playlist"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Escape' && setNewName(null)}
+                />
+              </form>
+            )}
+            <div className="max-h-52 space-y-0.5 overflow-y-auto">
+              {playlists.map((pl) => (
+                <button
+                  key={pl.id}
+                  className={`nav-item py-1.5 ${dropTarget === pl.id ? 'bg-pink-500/20 text-white ring-1 ring-pink-400/60' : ''}`}
+                  data-testid="playlist-link"
+                  aria-current={view === `playlist:${pl.id}` ? 'page' : undefined}
+                  onClick={() => setView(`playlist:${pl.id}`)}
+                  onDragOver={(e) => {
+                    if (!e.dataTransfer.types.includes(SONG_MIME)) return
+                    e.preventDefault()
+                    e.dataTransfer.dropEffect = 'copy'
+                    setDropTarget(pl.id)
+                  }}
+                  onDragLeave={() => setDropTarget(null)}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    setDropTarget(null)
+                    const id = e.dataTransfer.getData(SONG_MIME)
+                    if (id) addToPlaylist(pl.id, id)
+                  }}
+                >
+                  <ListIcon className="h-[18px] w-[18px] shrink-0" />
+                  <span className="flex-1 truncate">{pl.name}</span>
+                  <span className="text-xs text-neutral-500">{pl.songIds.length}</span>
+                </button>
+              ))}
+              {playlists.length === 0 && newName === null && (
+                <p className="px-3 text-xs leading-relaxed text-neutral-600">Crea una con el +</p>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <p className="px-3 pb-1 text-[11px] font-semibold tracking-widest text-neutral-500 uppercase">
+              Herramientas
+            </p>
+            {/* eSound is only for bringing an existing library in: once there is music, it goes away. */}
+            {tools
+              .filter((t) => t.label !== 'Importar de eSound' || (loaded && songs.length === 0))
+              .map(({ label, Icon, run }) => (
+              <button key={label} className="nav-item" disabled={busy} onClick={run}>
+                <Icon className="h-[18px] w-[18px]" />
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-auto space-y-3">
+            <div className="rounded-xl bg-white/5 p-3 text-xs text-neutral-400 ring-1 ring-white/5">
+              <p data-testid="status" className="leading-relaxed break-words">
+                {/* A progress event can arrive after the task's own reply: only show it while busy. */}
+                {busy && progress
+                  ? `${TASK_LABEL[progress.task]}: ${progress.done}/${progress.total}${failedText(progress)}`
+                  : (message ?? `${songs.length} canciones`)}
+              </p>
+              {busy && (
+                <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className={`h-full rounded-full bg-linear-to-r from-violet-500 to-pink-500 transition-all ${progress ? '' : 'w-1/3 animate-pulse'}`}
+                    style={progress ? { width: `${(progress.done / Math.max(progress.total, 1)) * 100}%` } : undefined}
+                  />
+                </div>
+              )}
+            </div>
+            <button className="nav-item" aria-label="Nube" onClick={() => setShowSettings(true)}>
+              <CloudIcon />
+              <span className="flex-1">Nube</span>
+              <span
+                className={`h-2 w-2 rounded-full ${cloudOn ? 'bg-emerald-400 shadow-[0_0_8px] shadow-emerald-400' : 'bg-neutral-600'}`}
+                title={cloudOn ? 'Configurada' : 'Sin configurar'}
+              />
+            </button>
+          </div>
+        </aside>
+
+        <section className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+          {/* Color wash behind the header, in the playing cover's color (a solid color fades smoothly; a gradient can't). */}
+          <div
+            className="pointer-events-none absolute inset-x-0 top-0 h-96 transition-colors duration-1000"
+            style={{
+              backgroundColor: 'rgb(var(--accent) / 0.3)',
+              maskImage: 'linear-gradient(to bottom, black, transparent)'
+            }}
+          />
+          {/* Both stay mounted so search results and recommendations survive switching. */}
+          <div className={view === 'home' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}>
+            <Home
+              songs={songs}
+              onAdded={refresh}
+              currentId={currentId}
+              playing={playing}
+              onPlay={(label, list, id) => playFromList(label, list.map(toRef), id)}
+            />
+          </div>
+          <div className={view === 'library' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}>
+            <Library
+              songs={songs}
+              visible={visible}
+              query={query}
+              onQuery={setQuery}
+              onlySaved={onlySaved}
+              onOnlySaved={setOnlySaved}
+              currentId={currentId}
+              playing={playing}
+              onPlay={playFromLibrary}
+              onPlayAll={() => {
+                setShuffle(false)
+                if (playable[0]) playFromLibrary(playable[0].id)
+              }}
+              onShuffleAll={() => {
+                setShuffle(true)
+                const pick = playable[Math.floor(Math.random() * playable.length)]
+                if (pick) playFromLibrary(pick.id)
+              }}
+              onOpenCloud={() => setShowSettings(true)}
+              onGoSearch={() => setView('home')}
+              playlists={playlists}
+              onAddTo={addToPlaylist}
+            />
+          </div>
+          {openPlaylist && (
+            <div className="flex min-h-0 flex-1 flex-col">
+              <PlaylistView
+                playlist={openPlaylist}
+                songs={playlistSongs}
+                currentId={currentId}
+                playing={playing}
+                onPlay={(id) => playFromList(`Playlist: ${openPlaylist.name}`, playlistPlayable, id)}
+                onPlayAll={() => {
+                  setShuffle(false)
+                  if (playlistPlayable[0])
+                    playFromList(`Playlist: ${openPlaylist.name}`, playlistPlayable, playlistPlayable[0].id)
+                }}
+                onShuffleAll={() => {
+                  setShuffle(true)
+                  const pick = playlistPlayable[Math.floor(Math.random() * playlistPlayable.length)]
+                  if (pick) playFromList(`Playlist: ${openPlaylist.name}`, playlistPlayable, pick.id)
+                }}
+                onRename={async (name) => {
+                  try {
+                    await window.api.renamePlaylist(openPlaylist.id, name)
+                  } catch (err) {
+                    setMessage(clean(err))
+                  }
+                  await refreshPlaylists()
+                }}
+                onDelete={async () => {
+                  await window.api.deletePlaylist(openPlaylist.id)
+                  setView('library')
+                  await refreshPlaylists()
+                }}
+                onMove={async (from, to) => {
+                  await window.api.movePlaylistSong(openPlaylist.id, from, to)
+                  await refreshPlaylists()
+                }}
+                onRemove={async (songId) => {
+                  await window.api.removeFromPlaylist(openPlaylist.id, songId)
+                  await refreshPlaylists()
+                }}
+              />
+            </div>
+          )}
+        </section>
       </div>
 
-      <main className="flex-1 overflow-y-auto px-2">
-        {songs.length === 0 && (
-          <p className="mt-20 text-center text-neutral-500">
-            Tu biblioteca está vacía. Empieza con “Importar de eSound”.
-          </p>
-        )}
-        <ul>
-          {visible.map((s) => (
-            <li key={s.id}>
-              <button
-                data-testid="song"
-                disabled={!s.file}
-                onClick={() => setCurrentId(s.id)}
-                className={`flex w-full items-center gap-3 rounded px-2 py-1.5 text-left hover:bg-neutral-900 disabled:cursor-default disabled:opacity-50 ${
-                  s.id === currentId ? 'bg-neutral-900 text-violet-300' : ''
-                }`}
-              >
-                {s.coverUrl ? (
-                  <img src={s.coverUrl} alt="" className="h-9 w-9 rounded object-cover" />
-                ) : (
-                  <div className="h-9 w-9 rounded bg-neutral-800" />
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="truncate">{s.title}</div>
-                  <div className="truncate text-xs text-neutral-500">{s.artists}</div>
-                </div>
-                {s.error && (
-                  <span className="max-w-64 truncate text-xs text-red-400" title={s.error}>
-                    {s.error}
-                  </span>
-                )}
-                <span className="w-16 text-right text-xs text-neutral-500">
-                  {!s.file ? 'sin audio' : s.uploaded ? '☁ nube' : 'local'}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </main>
-
-      <Player song={current} queue={playable} onSelect={setCurrentId} />
-      {showSettings && <CloudSettings onClose={() => setShowSettings(false)} />}
+      <Player
+        song={current}
+        queue={queue}
+        onSelect={setCurrentId}
+        shuffle={shuffle}
+        onShuffle={setShuffle}
+        onPlayingChange={setPlaying}
+        queueLabel={source?.label ?? null}
+        onExitQueue={() => setSource(null)}
+        isPreview={!!current && !libraryIds.has(current.id)}
+        onAdd={async () => {
+          if (!current) return
+          try {
+            await window.api.addSong({
+              id: current.id,
+              title: current.title,
+              artists: current.artists,
+              durationSec: current.durationSec,
+              coverUrl: current.coverUrl ?? ''
+            })
+          } catch (err) {
+            setMessage((err as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''))
+          } finally {
+            await refresh()
+          }
+        }}
+        radio={radio}
+        onRadio={setRadio}
+        onQueueEnd={startRadio}
+      />
+      {showSettings && (
+        <CloudSettings
+          onClose={() => {
+            setShowSettings(false)
+            refreshCloud()
+          }}
+        />
+      )}
     </div>
   )
 }

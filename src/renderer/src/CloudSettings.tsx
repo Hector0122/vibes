@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { CloudSettingsView } from '../../shared/types'
+import { CloudIcon } from './icons'
 
 export function CloudSettings({ onClose }: { onClose: () => void }): React.JSX.Element {
   const [view, setView] = useState<CloudSettingsView | null>(null)
@@ -21,42 +22,63 @@ export function CloudSettings({ onClose }: { onClose: () => void }): React.JSX.E
     (e as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black/60" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div
         role="dialog"
         aria-label="Nube"
-        className="w-[28rem] space-y-3 rounded-lg bg-neutral-900 p-5"
+        className="w-[30rem] space-y-4 rounded-2xl bg-neutral-900 p-6 shadow-2xl shadow-black/60 ring-1 ring-white/10"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-lg font-semibold">Tu nube (Cloudflare Worker)</h2>
-        <label className="block text-sm">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-linear-to-br from-violet-500 to-pink-500">
+            <CloudIcon className="h-5 w-5" />
+          </span>
+          <div>
+            <h2 className="text-lg font-semibold">Tu nube</h2>
+            <p className="text-xs text-neutral-400">Cloudflare Worker donde se guarda tu música</p>
+          </div>
+        </div>
+        <label className="block text-sm font-medium text-neutral-300">
           URL del Worker
           <input
-            className="mt-1 w-full rounded bg-neutral-800 px-3 py-1.5"
+            className="field mt-1.5 rounded-lg"
             placeholder="https://vibes-cloud.<tu-cuenta>.workers.dev"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
           />
         </label>
-        <label className="block text-sm">
-          Token {view?.hasToken && <span className="text-neutral-500">(guardado; déjalo vacío para conservarlo)</span>}
+        <label className="block text-sm font-medium text-neutral-300">
+          Token{' '}
+          {view?.hasToken && <span className="font-normal text-neutral-500">(guardado; déjalo vacío para conservarlo)</span>}
           <input
             type="password"
-            className="mt-1 w-full rounded bg-neutral-800 px-3 py-1.5"
+            className="field mt-1.5 rounded-lg"
             value={token}
             onChange={(e) => setToken(e.target.value)}
           />
+          <span className="mt-1.5 block text-xs font-normal text-neutral-500">
+            Es el contenido del archivo <code className="text-neutral-400">~/.config/vibes/api_token</code>
+          </span>
         </label>
         {view && !view.encryptionAvailable && (
           <p className="text-sm text-amber-400">
             Este sistema no tiene llavero seguro disponible; el token no se puede guardar.
           </p>
         )}
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+        <label className="flex items-center gap-2 text-sm text-neutral-300">
+          <input
+            type="checkbox"
+            className="h-4 w-4 accent-violet-500"
+            checked={enabled}
+            onChange={(e) => setEnabled(e.target.checked)}
+          />
           Usar la nube
         </label>
-        {status && <p className="text-sm text-neutral-400">{status}</p>}
+        {status && (
+          <p className={`rounded-lg px-3 py-2 text-sm ${status.includes('✓') ? 'bg-emerald-500/10 text-emerald-300' : 'bg-white/5 text-neutral-300'}`}>
+            {status}
+          </p>
+        )}
         <div className="flex justify-end gap-2 pt-2">
           <button
             className="btn"
@@ -69,7 +91,7 @@ export function CloudSettings({ onClose }: { onClose: () => void }): React.JSX.E
             Probar
           </button>
           <button
-            className="btn bg-violet-600 hover:bg-violet-500"
+            className="btn-accent"
             onClick={async () => {
               try {
                 setView(await window.api.saveCloudSettings(input))

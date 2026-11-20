@@ -25,6 +25,18 @@ adelante, en el celular.
   canciones nuevas.
 - **Fase 3: Android.** React Native, reproduce desde tu R2.
 
+## Celular (`mobile/`)
+
+App de Expo que escucha tu biblioteca desde tu nube: búsqueda, aleatorio, reproducción automática y
+sigue sonando con la pantalla apagada. Para probarla en tu Android, instala **Expo Go** y, en la misma
+Wi-Fi:
+
+```bash
+cd mobile && pnpm install && pnpm start   # escanea el QR con Expo Go
+```
+
+La primera vez pide la URL del Worker y tu token (el de `~/.config/vibes/api_token`).
+
 ## Requisitos
 
 - Node 22+ y pnpm

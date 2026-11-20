@@ -1,15 +1,16 @@
-// The three library jobs behind the toolbar buttons. Free of Electron so the
+// The library jobs behind the toolbar buttons and the search "Agregar". Free of Electron so the
 // tests drive them directly; index.ts wires them to IPC.
 import { createHash } from 'crypto'
 import { existsSync } from 'fs'
 import { readFile } from 'fs/promises'
 import { join } from 'path'
-import { pickMeta } from '../shared/api'
-import type { ImportResult, LocalSong, TaskProgress } from '../shared/types'
+import { pickMeta, validateMeta, YOUTUBE_ID_RE } from '../shared/api'
+import type { ImportResult, LocalSong, SearchResult, TaskProgress } from '../shared/types'
 import type { CloudClient } from './cloud/client'
 import { readEsoundLibrary } from './esound'
 import type { Library } from './library'
 import { downloadAudio, eachLimit, remuxToM4a, type Tools } from './media'
+import type { Enrichment } from './metadata'
 
 export interface TaskContext {
   library: Library
@@ -17,6 +18,8 @@ export interface TaskContext {
   tools: Tools
   onSong?: (song: LocalSong) => void
   onProgress?: (p: TaskProgress) => void
+  /** Real cover/album for a YouTube song (Deezer); null when unknown. */
+  enrich?: (title: string, artists: string, durationSec: number | null) => Promise<Enrichment | null>
 }
 
 const hasAudio = (ctx: TaskContext, s: LocalSong): boolean =>
@@ -74,19 +77,106 @@ export async function uploadAll(ctx: TaskContext, client: CloudClient): Promise<
   const todo = ctx.library.list().filter((s) => !s.uploaded && hasAudio(ctx, s))
   const progress: TaskProgress = { task: 'upload', done: 0, total: todo.length, failed: 0 }
   await eachLimit(todo, 3, async (s) => {
-    try {
-      const data = await readFile(join(ctx.audioDir, s.file!))
-      const sha256 = createHash('sha256').update(data).digest('hex')
-      const { url } = await client.beginUpload(s.id, { meta: pickMeta(s), size: data.length, sha256 })
-      if (url) await client.putFile(url, data)
-      await client.commit(s.id)
-      await setSong(ctx, s.id, { uploaded: true, error: null })
-    } catch (err) {
-      progress.failed++
-      await setSong(ctx, s.id, { error: (err as Error).message })
-    }
+    if (!(await uploadOne(ctx, client, s))) progress.failed++
     progress.done++
     ctx.onProgress?.({ ...progress })
   })
   return progress
+}
+
+/** Uploads one song's local audio; records the outcome on the song. True if it made it. */
+async function uploadOne(ctx: TaskContext, client: CloudClient, s: LocalSong): Promise<boolean> {
+  try {
+    const data = await readFile(join(ctx.audioDir, s.file!))
+    const sha256 = createHash('sha256').update(data).digest('hex')
+    const { url } = await client.beginUpload(s.id, { meta: pickMeta(s), size: data.length, sha256 })
+    if (url) await client.putFile(url, data)
+    await client.commit(s.id)
+    await setSong(ctx, s.id, { uploaded: true, error: null })
+    return true
+  } catch (err) {
+    await setSong(ctx, s.id, { error: (err as Error).message })
+    return false
+  }
+}
+
+/**
+ * Adds a YouTube search hit: into the library (saved), download, then up to
+ * the cloud when one is set up. A song already on this machine is not
+ * downloaded again. Throws only when the download fails (the song stays in
+ * the library with the error, so "Descargar faltantes" can retry it); a
+ * failed upload is recorded on the song and "Subir a la nube" retries it.
+ */
+export async function addFromSearch(
+  ctx: TaskContext,
+  r: SearchResult,
+  client: CloudClient | null
+): Promise<LocalSong> {
+  if (typeof r?.id !== 'string' || !YOUTUBE_ID_RE.test(r.id)) throw new Error('Canción inválida')
+  const meta = pickMeta({
+    title: String(r.title ?? ''),
+    artists: String(r.artists ?? ''),
+    album: null,
+    deezerId: null,
+    deezerArtistId: null,
+    isrc: null,
+    durationSec: typeof r.durationSec === 'number' ? r.durationSec : null,
+    coverUrl: typeof r.coverUrl === 'string' ? r.coverUrl : null
+  })
+  const invalid = validateMeta(meta)
+  if (invalid) throw new Error(invalid)
+
+  const prev = ctx.library.get(r.id)
+  if (prev) {
+    // Known song (e.g. from eSound): keep its richer metadata, just mark it saved.
+    if (!prev.saved) await setSong(ctx, r.id, { saved: true })
+  } else {
+    await ctx.library.merge([{ id: r.id, ...meta, saved: true, playCount: 0 }])
+    ctx.onSong?.(ctx.library.get(r.id)!)
+    await enrichSong(ctx, r.id)
+  }
+
+  if (!hasAudio(ctx, ctx.library.get(r.id)!)) {
+    try {
+      await downloadAudio(ctx.tools, r.id, ctx.audioDir)
+      await setSong(ctx, r.id, { file: `${r.id}.m4a`, uploaded: false, error: null })
+    } catch (err) {
+      await setSong(ctx, r.id, { error: (err as Error).message })
+      throw err
+    }
+  }
+  const song = ctx.library.get(r.id)!
+  if (client && !song.uploaded) await uploadOne(ctx, client, song)
+  return ctx.library.get(r.id)!
+}
+
+/** Swaps a YouTube thumbnail for the real album cover (and album, Deezer ids). Never throws. */
+export async function enrichSong(ctx: TaskContext, id: string): Promise<boolean> {
+  const s = ctx.library.get(id)
+  if (!ctx.enrich || !s || s.deezerId) return false
+  try {
+    const found = await ctx.enrich(s.title, s.artists, s.durationSec)
+    if (!found) return false
+    await setSong(ctx, id, { ...found, album: s.album ?? found.album })
+    return true
+  } catch {
+    return false // offline or Deezer down: the YouTube thumbnail stays
+  }
+}
+
+/** Songs added from YouTube before covers were looked up, a couple at a time. */
+export async function enrichYoutubeSongs(ctx: TaskContext): Promise<number> {
+  const todo = ctx.library.list().filter((s) => !s.deezerId && (!s.coverUrl || s.coverUrl.includes('ytimg.com')))
+  let done = 0
+  await eachLimit(todo, 2, async (s) => {
+    if (await enrichSong(ctx, s.id)) done++
+  })
+  return done
+}
+
+/** One more play of this song (the player calls it once it has really been listened to). */
+export async function recordPlay(ctx: TaskContext, id: string, now = Date.now()): Promise<void> {
+  const s = ctx.library.get(id)
+  if (!s) return // a preview of a song that isn't in the library
+  await setSong(ctx, id, { playCount: s.playCount + 1, lastPlayedAt: now })
 }

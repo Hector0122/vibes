@@ -43,10 +43,13 @@ export const defaultTools = (): Tools => ({
   ytdlp: findTool('yt-dlp', process.env.VIBES_YTDLP)
 })
 
-function run(cmd: string, args: string[], timeoutMs: number): Promise<void> {
+/** Runs a tool without a shell; resolves with its stdout. */
+export function run(cmd: string, args: string[], timeoutMs: number): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { stdio: ['ignore', 'ignore', 'pipe'], timeout: timeoutMs })
+    const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], timeout: timeoutMs })
+    let stdout = ''
     let stderr = ''
+    child.stdout.on('data', (d) => (stdout += d))
     child.stderr.on('data', (d) => (stderr = (stderr + d).slice(-2000)))
     child.on('error', (err) =>
       reject(
@@ -56,7 +59,7 @@ function run(cmd: string, args: string[], timeoutMs: number): Promise<void> {
       )
     )
     child.on('close', (code, signal) => {
-      if (code === 0) resolve()
+      if (code === 0) resolve(stdout)
       else reject(new Error(lastLine(stderr) || `${cmd} terminó con ${signal ?? `código ${code}`}`))
     })
   })

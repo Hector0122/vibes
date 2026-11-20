@@ -1,0 +1,117 @@
+import { describe, expect, it } from 'vitest'
+import { isListened, pickNext, pickPrev, remember } from '../queue'
+
+const Q = ['a', 'b', 'c', 'd', 'e']
+
+/** A rand() that replays the given values, for predictable shuffles. */
+const seq = (...v: number[]) => {
+  let i = 0
+  return () => v[i++ % v.length]
+}
+
+describe('pickNext in order', () => {
+  it('goes to the next one and wraps at the end', () => {
+    expect(pickNext(Q, 'b', false, []).id).toBe('c')
+    expect(pickNext(Q, 'e', false, []).id).toBe('a')
+  })
+
+  it('starts at the top when nothing is playing (or the song left the list)', () => {
+    expect(pickNext(Q, null, false, []).id).toBe('a')
+    expect(pickNext(Q, 'zzz', false, []).id).toBe('a')
+  })
+
+  it('an empty list plays nothing', () => {
+    expect(pickNext([], 'a', true, ['a']).id).toBeNull()
+  })
+})
+
+describe('pickNext shuffled', () => {
+  it('plays every song once before repeating any, never the current one twice in a row', () => {
+    for (let run = 0; run < 50; run++) {
+      let current: string | null = null
+      let bag: string[] = []
+      const played: string[] = []
+      for (let i = 0; i < Q.length * 3; i++) {
+        const n = pickNext(Q, current, true, bag)
+        expect(n.id).not.toBe(current)
+        played.push(n.id!)
+        current = n.id
+        bag = n.bag
+      }
+      // The first round (with no song playing before it) covers the whole list.
+      expect(new Set(played.slice(0, Q.length)).size).toBe(Q.length)
+    }
+  })
+
+  it('draws from the bag with the given randomness', () => {
+    expect(pickNext(Q, 'a', true, ['b', 'c', 'd'], seq(0.99))).toEqual({ id: 'd', bag: ['b', 'c'], wrapped: false })
+    expect(pickNext(Q, 'a', true, ['b', 'c', 'd'], seq(0))).toEqual({ id: 'b', bag: ['c', 'd'], wrapped: false })
+  })
+
+  it('refills the bag when it runs out, leaving out the song that is playing', () => {
+    const n = pickNext(Q, 'c', true, [], seq(0))
+    expect(n.id).toBe('a')
+    expect(n.bag.sort()).toEqual(['b', 'd', 'e'])
+  })
+
+  it('ignores bag songs that are no longer in the list (e.g. after a search filter)', () => {
+    expect(pickNext(['a', 'b'], 'a', true, ['x', 'y'], seq(0)).id).toBe('b')
+  })
+
+  it('with a single song, plays it again instead of stopping', () => {
+    expect(pickNext(['a'], 'a', true, []).id).toBe('a')
+  })
+})
+
+describe('pickPrev', () => {
+  it('goes back to what actually played, newest first', () => {
+    expect(pickPrev(Q, 'd', ['a', 'e'])).toEqual({ id: 'e', history: ['a'] })
+  })
+
+  it('skips history entries that are the current song or left the list', () => {
+    expect(pickPrev(Q, 'd', ['b', 'gone', 'd'])).toEqual({ id: 'b', history: [] })
+  })
+
+  it('with no history, goes up the list (wrapping)', () => {
+    expect(pickPrev(Q, 'c', []).id).toBe('b')
+    expect(pickPrev(Q, 'a', []).id).toBe('e')
+  })
+})
+
+describe('remember', () => {
+  it('appends, moves a replayed song to the end, and caps the length', () => {
+    expect(remember(['a', 'b'], 'a')).toEqual(['b', 'a'])
+    expect(remember(['a', 'b', 'c'], 'd', 3)).toEqual(['b', 'c', 'd'])
+  })
+})
+
+describe('isListened', () => {
+  it('counts at 30 s for normal songs', () => {
+    expect(isListened(29.9, 240)).toBe(false)
+    expect(isListened(30, 240)).toBe(true)
+  })
+  it('counts at half for short songs', () => {
+    expect(isListened(9, 20)).toBe(false)
+    expect(isListened(10, 20)).toBe(true)
+  })
+  it('never counts before the length is known', () => {
+    expect(isListened(100, NaN)).toBe(false)
+    expect(isListened(100, 0)).toBe(false)
+  })
+})
+
+describe('pickNext wrapped (the list ran out: the radio takes over)', () => {
+  it('in order: only after the last song', () => {
+    expect(pickNext(Q, 'd', false, []).wrapped).toBe(false)
+    expect(pickNext(Q, 'e', false, []).wrapped).toBe(true)
+    expect(pickNext(Q, null, false, []).wrapped).toBe(false)
+    expect(pickNext(Q, 'gone', false, []).wrapped).toBe(false)
+  })
+
+  it('shuffled: after a full round, not when starting one', () => {
+    expect(pickNext(Q, null, true, []).wrapped).toBe(false)
+    expect(pickNext(Q, 'a', true, ['b']).wrapped).toBe(false)
+    expect(pickNext(Q, 'b', true, []).wrapped).toBe(true)
+    expect(pickNext(Q, 'gone', true, []).wrapped).toBe(false) // a preview from outside the list
+  })
+})

@@ -1,4 +1,5 @@
 # Runs every test level on each push and PR: Worker integration tests,
+# the phone app (typecheck + Jest; its client-vs-Worker tests run in the root Vitest),
 # desktop unit/integration tests and the E2E flow against the built app.
 name: CI
 
@@ -32,3 +33,74 @@ jobs:
 
       - run: pnpm test
       - run: xvfb-run -a pnpm test:e2e
+
+  mobile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4 # version comes from the root package.json "packageManager"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: mobile/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+
+  # Installers, built only when the tests pass. Download them from the run's "Artifacts".
+  desktop-installers:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vibes-linux
+          path: |
+            dist/*.deb
+            dist/*.AppImage
+          if-no-files-found: error
+
+  android-apk:
+    needs: mobile
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: mobile/pnpm-lock.yaml
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - run: pnpm install --frozen-lockfile
+      # Generates android/ from app.json (it is never committed).
+      - run: npx expo prebuild --platform android --no-install
+      # Release build signed with the debug key: installable by hand, not for the Play Store.
+      # arm64 for phones, x86_64 for Waydroid / emulators.
+      - run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,x86_64
+        working-directory: mobile/android
+      - run: mv android/app/build/outputs/apk/release/app-release.apk vibes.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vibes-android
+          path: mobile/vibes.apk
+          if-no-files-found: error

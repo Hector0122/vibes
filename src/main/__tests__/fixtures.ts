@@ -9,6 +9,18 @@ import { DatabaseSync } from 'node:sqlite'
 export const CACHED_ID = 'aaaaaaaaaaa' // in eSound with cached audio
 export const MISSING_ID = 'bbbbbbbbbbb' // in eSound, no cached audio
 export const FAILING_ID = 'fffffffffff' // the fake yt-dlp fails on this one
+export const SEARCH_HIT_ID = 'ddddddddddd' // first hit of any search in the fake yt-dlp
+export const MIX_IDS = ['mmmmmmmmmm1', 'mmmmmmmmmm2'] // what the fake YouTube mix recommends
+
+/** What real `yt-dlp --flat-playlist --dump-json ytsearchN:…` prints (trimmed), plus a channel hit to skip. */
+export const FAKE_SEARCH_OUTPUT = [
+  { _type: 'url', ie_key: 'Youtube', id: SEARCH_HIT_ID, title: 'Gorillaz - Feel Good Inc. (Official Video)', channel: 'Gorillaz', duration: 255 },
+  { _type: 'url', ie_key: 'YoutubeTab', id: 'UCfIXdjDQH9Fau7y99_Orpjw', title: 'Gorillaz', channel: 'Gorillaz' },
+  { _type: 'url', ie_key: 'Youtube', id: CACHED_ID, title: 'Stylo', channel: 'Gorillaz - Topic', duration: 270 },
+  { _type: 'url', ie_key: 'Youtube', id: FAILING_ID, title: 'Broken upload', channel: 'Nobody', duration: 10 }
+]
+  .map((e) => JSON.stringify(e))
+  .join('\n')
 
 /** A 1 s sine; `fragmented` mimics eSound's DASH cache. */
 export function makeAudio(path: string, fragmented = false): void {
@@ -50,18 +62,45 @@ export function makeEsoundDir(root: string): string {
   return dir
 }
 
-/** A yt-dlp stand-in: copies `audio` to the -o template, fails for FAILING_ID. */
+/** A YouTube mix: starts with the seed itself and includes a library song, both to be skipped. */
+export const fakeMixOutput = (seed: string): string =>
+  [
+    { id: seed, title: 'The seed', channel: 'x', duration: 100 },
+    { id: MIX_IDS[0], title: 'Caifanes - Afuera (Letra)', channel: 'Puro Rock', duration: 251 },
+    { id: CACHED_ID, title: 'Gorillaz - Stylo', channel: 'Gorillaz', duration: 270 },
+    { id: MIX_IDS[1], title: 'Elefante - De la noche a la mañana', channel: 'Ciudad Nostalgia', duration: 230 }
+  ]
+    .map((e) => JSON.stringify({ _type: 'url', ie_key: 'Youtube', ...e }))
+    .join('\n')
+
+/**
+ * A yt-dlp stand-in: copies `audio` to the -o template, fails for FAILING_ID;
+ * a `ytsearchN:` query prints FAKE_SEARCH_OUTPUT (and fails for "rompe");
+ * a mix URL (list=RD<seed>) prints fakeMixOutput(seed); -g prints a stream URL
+ * ($VIBES_FAKE_STREAM_URL, or https://stream.test/<id>.m4a).
+ */
 export function makeFakeYtdlp(root: string, audio: string): string {
   const path = join(root, 'fake-yt-dlp')
+  writeFileSync(join(root, 'fake-search.jsonl'), FAKE_SEARCH_OUTPUT + '\n')
+  writeFileSync(join(root, 'fake-mix.jsonl'), fakeMixOutput('SEED_ID') + '\n')
   writeFileSync(
     path,
     `#!/bin/sh
+stream=""
+for a in "$@"; do [ "$a" = "-g" ] && stream=1; done
 out=""; url=""
 while [ $# -gt 0 ]; do
   case "$1" in -o) out="$2"; shift ;; --) url="$2"; shift ;; esac
   shift
 done
-case "$url" in *${FAILING_ID}*) echo "ERROR: Video unavailable" >&2; exit 1 ;; esac
+case "$url" in
+  *list=RD*) sed "s/SEED_ID/\${url#*list=RD}/" "${join(root, 'fake-mix.jsonl')}"; exit 0 ;;
+  ytsearch*rompe*) echo "ERROR: Unable to download API page" >&2; exit 1 ;;
+  ytsearch*) cat "${join(root, 'fake-search.jsonl')}"; exit 0 ;;
+  *${FAILING_ID}*) echo "ERROR: Video unavailable" >&2; exit 1 ;;
+esac
+# -g: print where the audio streams from (the E2E serves it locally).
+if [ -n "$stream" ]; then echo "\${VIBES_FAKE_STREAM_URL:-https://stream.test/\${url##*=}.m4a}"; exit 0; fi
 cp "${audio}" "$(echo "$out" | sed 's/%(ext)s/m4a/')"
 `
   )

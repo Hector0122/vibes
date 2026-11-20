@@ -10,8 +10,17 @@ import type { Env } from '../../../worker/src/env'
 import type { ListSongsResponse } from '../../shared/api'
 import { CloudClient } from '../cloud/client'
 import { Library } from '../library'
-import { downloadMissing, importEsound, uploadAll, type TaskContext } from '../tasks'
-import { CACHED_ID, FAILING_ID, makeAudio, makeEsoundDir, makeFakeYtdlp, MISSING_ID } from './fixtures'
+import {
+  addFromSearch,
+  downloadMissing,
+  enrichYoutubeSongs,
+  importEsound,
+  recordPlay,
+  uploadAll,
+  type TaskContext
+} from '../tasks'
+import { searchYoutube } from '../youtube'
+import { CACHED_ID, FAILING_ID, makeAudio, makeEsoundDir, makeFakeYtdlp, MISSING_ID, SEARCH_HIT_ID } from './fixtures'
 
 let root: string
 let esoundDir: string
@@ -102,5 +111,142 @@ describe('import → download → upload', () => {
     expect(ctx.library.get(CACHED_ID)).toMatchObject({ uploaded: false, error: 'Token de la nube inválido' })
     expect(c.r2.objects.size).toBe(0)
     expect(JSON.parse(readFileSync(join(root, 'library.json'), 'utf-8')).songs).toHaveLength(2)
+  })
+})
+
+describe('search → add', () => {
+  const hit = async (id: string) => (await searchYoutube(ctx.tools, 'gorillaz')).find((r) => r.id === id)!
+
+  it('adds a hit: saved in the library, audio on disk, and up in R2 + D1', async () => {
+    const c = cloud()
+    const song = await addFromSearch(ctx, await hit(SEARCH_HIT_ID), c.client)
+    expect(song).toMatchObject({
+      id: SEARCH_HIT_ID,
+      title: 'Feel Good Inc.',
+      artists: 'Gorillaz',
+      saved: true,
+      file: `${SEARCH_HIT_ID}.m4a`,
+      uploaded: true,
+      error: null
+    })
+    expect(existsSync(join(ctx.audioDir, `${SEARCH_HIT_ID}.m4a`))).toBe(true)
+    // Persisted, so it survives a restart.
+    const onDisk = new Library(join(root, 'library.json'))
+    await onDisk.load()
+    expect(onDisk.get(SEARCH_HIT_ID)?.file).toBe(`${SEARCH_HIT_ID}.m4a`)
+    // In the cloud with the cleaned metadata and the exact file size.
+    const { songs } = await c.list()
+    expect(songs).toHaveLength(1)
+    expect(songs[0]).toMatchObject({ id: SEARCH_HIT_ID, title: 'Feel Good Inc.', durationSec: 255 })
+    expect((await c.r2.head(`songs/${SEARCH_HIT_ID}.m4a`))?.size).toBe(
+      statSync(join(ctx.audioDir, `${SEARCH_HIT_ID}.m4a`)).size
+    )
+  })
+
+  it('without a cloud the song stays local, and "Subir a la nube" picks it up later', async () => {
+    const song = await addFromSearch(ctx, await hit(SEARCH_HIT_ID), null)
+    expect(song).toMatchObject({ file: `${SEARCH_HIT_ID}.m4a`, uploaded: false })
+    const c = cloud()
+    expect(await uploadAll(ctx, c.client)).toMatchObject({ total: 1, failed: 0 })
+    expect((await c.list()).songs.map((s) => s.id)).toEqual([SEARCH_HIT_ID])
+  })
+
+  it('a song already imported from eSound keeps its metadata and is not downloaded again', async () => {
+    await importEsound(ctx, esoundDir)
+    const before = statSync(join(ctx.audioDir, `${CACHED_ID}.m4a`)).mtimeMs
+    const song = await addFromSearch(ctx, await hit(CACHED_ID), null)
+    expect(song).toMatchObject({ title: 'Stylo', artists: 'Gorillaz, Bobby Womack', album: 'Plastic Beach' })
+    expect(statSync(join(ctx.audioDir, `${CACHED_ID}.m4a`)).mtimeMs).toBe(before)
+    expect(ctx.library.list()).toHaveLength(2)
+  })
+
+  it('a failed download rejects but leaves the song with its error, for "Descargar faltantes"', async () => {
+    await expect(addFromSearch(ctx, await hit(FAILING_ID), null)).rejects.toThrow('Video unavailable')
+    expect(ctx.library.get(FAILING_ID)).toMatchObject({ file: null, saved: true, error: expect.stringContaining('Video unavailable') })
+  })
+
+  it('a failed upload keeps the song local with the error instead of failing the add', async () => {
+    const c = cloud()
+    const bad = new CloudClient({ baseUrl: 'https://worker.test', token: 'wrong', retries: 0, fetch: (c.client as unknown as { fetchImpl: typeof fetch }).fetchImpl })
+    const song = await addFromSearch(ctx, await hit(SEARCH_HIT_ID), bad)
+    expect(song).toMatchObject({ file: `${SEARCH_HIT_ID}.m4a`, uploaded: false, error: 'Token de la nube inválido' })
+    expect(c.r2.objects.size).toBe(0)
+  })
+
+  it('rejects anything that is not a YouTube id or has no title', async () => {
+    const base = await hit(SEARCH_HIT_ID)
+    await expect(addFromSearch(ctx, { ...base, id: '--exec=rm' }, null)).rejects.toThrow('Canción inválida')
+    await expect(addFromSearch(ctx, { ...base, title: '  ' }, null)).rejects.toThrow('Invalid title')
+    expect(ctx.library.list()).toHaveLength(0)
+  })
+})
+
+describe('covers from Deezer', () => {
+  const hit = async (id: string) => (await searchYoutube(ctx.tools, 'gorillaz')).find((r) => r.id === id)!
+  const DZ = { coverUrl: 'https://cdn-images.dzcdn.net/x/1000x1000.jpg', album: 'Demon Days', deezerId: '3129775', deezerArtistId: '14' }
+
+  it('a song added from YouTube gets the real cover and album, and the cloud gets them too', async () => {
+    const asked: string[] = []
+    ctx.enrich = async (title, artists) => {
+      asked.push(`${artists} — ${title}`)
+      return DZ
+    }
+    const c = cloud()
+    const song = await addFromSearch(ctx, await hit(SEARCH_HIT_ID), c.client)
+    expect(asked).toEqual(['Gorillaz — Feel Good Inc.'])
+    expect(song).toMatchObject(DZ)
+    expect((await c.list()).songs[0]).toMatchObject({ coverUrl: DZ.coverUrl, album: 'Demon Days' })
+  })
+
+  it('no match or Deezer down: the song is still added with the YouTube thumbnail', async () => {
+    ctx.enrich = async () => {
+      throw new Error('offline')
+    }
+    const song = await addFromSearch(ctx, await hit(SEARCH_HIT_ID), null)
+    expect(song.file).toBe(`${SEARCH_HIT_ID}.m4a`)
+    expect(song.coverUrl).toContain('ytimg.com')
+    expect(song.deezerId).toBeNull()
+  })
+
+  it('songs from eSound already have Deezer data and are not looked up again', async () => {
+    await importEsound(ctx, esoundDir)
+    let calls = 0
+    ctx.enrich = async () => {
+      calls++
+      return DZ
+    }
+    await addFromSearch(ctx, await hit(CACHED_ID), null)
+    expect(calls).toBe(0)
+  })
+
+  it('the startup pass fixes earlier YouTube songs only', async () => {
+    await importEsound(ctx, esoundDir) // Stylo has a Deezer id; "Live (Official)" has no cover
+    await addFromSearch(ctx, await hit(SEARCH_HIT_ID), null) // no enrich yet
+    const looked: string[] = []
+    ctx.enrich = async (title) => {
+      looked.push(title)
+      return title === 'Feel Good Inc.' ? DZ : null
+    }
+    expect(await enrichYoutubeSongs(ctx)).toBe(1)
+    expect(looked.sort()).toEqual(['Feel Good Inc.', 'Live (Official)'])
+    expect(ctx.library.get(SEARCH_HIT_ID)).toMatchObject(DZ)
+    expect(ctx.library.get(CACHED_ID)?.coverUrl).toBe('https://img/1.jpg')
+  })
+})
+
+describe('recordPlay', () => {
+  it('counts plays and remembers when, on disk', async () => {
+    await importEsound(ctx, esoundDir)
+    const before = ctx.library.get(CACHED_ID)!.playCount
+    await recordPlay(ctx, CACHED_ID, 1000)
+    await recordPlay(ctx, CACHED_ID, 2000)
+    const onDisk = new Library(join(root, 'library.json'))
+    await onDisk.load()
+    expect(onDisk.get(CACHED_ID)).toMatchObject({ playCount: before + 2, lastPlayedAt: 2000 })
+  })
+
+  it('a preview of a song not in the library is ignored', async () => {
+    await expect(recordPlay(ctx, 'zzzzzzzzzzz')).resolves.toBeUndefined()
+    expect(ctx.library.list()).toHaveLength(0)
   })
 })
