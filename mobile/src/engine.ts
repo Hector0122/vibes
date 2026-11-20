@@ -455,11 +455,13 @@ export class Engine {
    * Shows the last song (paused, where it was) after the app starts. `songs` is the
    * library, to rebuild the list it was playing from. Does nothing once something plays.
    */
-  async restore(songs: CloudSong[]): Promise<boolean> {
+  async restore(songs: CloudSong[], opts: { onlyFrom?: boolean } = {}): Promise<boolean> {
     if (this.state.current) return false
     const s = await store.loadSession()
     if (!s || this.state.current) return false
     const byId = new Map(songs.map((x) => [x.id, x]))
+    // The widget plays only downloaded songs: last time's song counts only if it's one of them.
+    if (opts.onlyFrom && !byId.has(s.current.id)) return false
     const queue = s.queueIds.map((id) => byId.get(id)).filter((x): x is CloudSong => !!x)
     if (this.queue.length === 0) this.queue = queue.length ? queue : songs
     const current = byId.get(s.current.id) ?? s.current

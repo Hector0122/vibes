@@ -32,6 +32,7 @@ import { checkForUpdate } from './src/updates'
 import { useOffline } from './src/useOffline'
 import { engine } from './src/engine'
 import { usePlayer } from './src/usePlayer'
+import { startWidgetSync } from './src/widget/sync'
 
 export default function App(): React.JSX.Element {
   // undefined = still reading secure storage; null = not set up yet.
@@ -73,6 +74,9 @@ export default function App(): React.JSX.Element {
 
   const downloads = useOffline(cloud)
   const player = usePlayer(cloud, queue)
+
+  // The home screen widget follows the player.
+  useEffect(() => startWidgetSync(), [])
 
   // A newer APK on GitHub: offer it (Android asks before installing).
   useEffect(() => {
