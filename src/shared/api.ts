@@ -84,3 +84,48 @@ export function pickMeta(m: SongMeta): SongMeta {
     coverUrl: m.coverUrl
   }
 }
+
+// Playlists: made on the desktop, mirrored to the cloud so the phone can show them.
+// The desktop sends the whole set each time (PUT /playlists replaces it).
+
+export const PLAYLIST_ID_RE = /^[A-Za-z0-9_-]{1,64}$/
+export const MAX_PLAYLISTS = 500
+export const MAX_PLAYLIST_SONGS = 10_000
+export const MAX_PLAYLIST_NAME = 100
+
+export interface CloudPlaylist {
+  id: string
+  name: string
+  /** Song ids (YouTube ids), in order. May name songs that aren't in the cloud yet. */
+  songIds: string[]
+  createdAt: number
+  updatedAt: number
+}
+
+export interface ListPlaylistsResponse {
+  playlists: CloudPlaylist[]
+}
+
+export type PutPlaylistsRequest = ListPlaylistsResponse
+
+/** Returns an error message, or null when the whole set is valid. */
+export function validatePlaylists(body: unknown): string | null {
+  const list = (body as { playlists?: unknown } | null)?.playlists
+  if (!Array.isArray(list)) return 'playlists must be an array'
+  if (list.length > MAX_PLAYLISTS) return 'Too many playlists'
+  const seen = new Set<string>()
+  for (const p of list as Record<string, unknown>[]) {
+    if (!p || typeof p !== 'object') return 'Invalid playlist'
+    if (typeof p.id !== 'string' || !PLAYLIST_ID_RE.test(p.id) || seen.has(p.id)) return 'Invalid playlist id'
+    seen.add(p.id)
+    if (typeof p.name !== 'string' || !p.name.trim() || p.name.length > MAX_PLAYLIST_NAME) {
+      return 'Invalid playlist name'
+    }
+    if (!Array.isArray(p.songIds) || p.songIds.length > MAX_PLAYLIST_SONGS) return 'Invalid songIds'
+    if (!p.songIds.every((s) => typeof s === 'string' && YOUTUBE_ID_RE.test(s))) return 'Invalid songIds'
+    for (const k of ['createdAt', 'updatedAt'] as const) {
+      if (!Number.isSafeInteger(p[k]) || (p[k] as number) < 0) return `Invalid ${k}`
+    }
+  }
+  return null
+}

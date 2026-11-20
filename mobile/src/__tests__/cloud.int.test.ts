@@ -47,6 +47,23 @@ describe('mobile cloud client', () => {
     expect(songs[0]).toMatchObject({ artists: 'Caifanes', durationSec: 286, size: 4 })
   })
 
+  it('reads the playlists the desktop sent', async () => {
+    const f = await worker()
+    const playlists = [{ id: 'p1', name: 'Viaje', songIds: ['aaaaaaaaaaa'], createdAt: 1, updatedAt: 2 }]
+    await f('https://w.test/v1/playlists', {
+      method: 'PUT',
+      headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ playlists })
+    })
+    const cloud = createCloud({ url: 'https://w.test', token: TOKEN, fetch: f })
+    expect(await cloud.listPlaylists()).toEqual(playlists)
+  })
+
+  it('an older Worker without playlists counts as none', async () => {
+    const old = (async () => new Response(JSON.stringify({ error: 'Not found' }), { status: 404 })) as typeof fetch
+    expect(await createCloud({ url: 'https://w.test', token: TOKEN, fetch: old }).listPlaylists()).toEqual([])
+  })
+
   it('gives a signed URL to stream a song', async () => {
     const cloud = createCloud({ url: 'https://w.test', token: TOKEN, fetch: await worker() })
     expect(await cloud.streamUrl('aaaaaaaaaaa')).toMatch(/songs\/aaaaaaaaaaa\.m4a/)

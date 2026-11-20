@@ -1,7 +1,14 @@
 // The phone's client for your Worker (contract: ../../src/shared/api.ts).
-// Read-only for now: health, the list of songs, and a signed URL to stream one.
+// Read-only: health, the songs, the playlists, and a signed URL to stream (or download) one.
 // No React Native imports, so it is tested against the real Worker with Vitest.
-import { API_PREFIX, type CloudSong, type ListSongsResponse, type StreamResponse } from '../../src/shared/api'
+import {
+  API_PREFIX,
+  type CloudPlaylist,
+  type CloudSong,
+  type ListPlaylistsResponse,
+  type ListSongsResponse,
+  type StreamResponse
+} from '../../src/shared/api'
 
 export class CloudError extends Error {
   constructor(
@@ -16,6 +23,7 @@ export class CloudError extends Error {
 export interface Cloud {
   health(): Promise<void>
   listSongs(): Promise<CloudSong[]>
+  listPlaylists(): Promise<CloudPlaylist[]>
   /** A signed R2 URL, valid for 15 minutes. */
   streamUrl(id: string): Promise<string>
 }
@@ -57,6 +65,15 @@ export function createCloud(opts: { url: string; token: string; fetch?: typeof f
   return {
     health: () => call<unknown>('/health').then(() => undefined),
     listSongs: () => call<ListSongsResponse>('/songs').then((r) => r.songs),
+    // An older Worker without playlists answers 404: treat it as "none yet".
+    listPlaylists: () =>
+      call<ListPlaylistsResponse>('/playlists').then(
+        (r) => r.playlists,
+        (e: unknown) => {
+          if (e instanceof CloudError && e.status === 404) return []
+          throw e
+        }
+      ),
     streamUrl: (id) => call<StreamResponse>(`/songs/${encodeURIComponent(id)}/stream`).then((r) => r.url)
   }
 }

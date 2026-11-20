@@ -2,7 +2,7 @@
 // the real migration SQL runs) and an in-memory R2 bucket. Only the subset of
 // each API that src/app.ts uses is implemented.
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import type { Env } from '../src/env'
 import { createApp } from '../src/app'
@@ -33,9 +33,11 @@ class FakeStatement {
 export function createFakeD1(): D1Database {
   const db = new DatabaseSync(':memory:')
   db.exec('PRAGMA foreign_keys = ON')
-  db.exec(
-    readFileSync(fileURLToPath(new URL('../migrations/0001_init.sql', import.meta.url)), 'utf-8')
-  )
+  // Every migration, in order, like `wrangler d1 migrations apply`.
+  const dir = fileURLToPath(new URL('../migrations/', import.meta.url))
+  for (const f of readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()) {
+    db.exec(readFileSync(dir + f, 'utf-8'))
+  }
   return {
     prepare: (sql: string) => new FakeStatement(db, sql),
     async batch(stmts: FakeStatement[]) {

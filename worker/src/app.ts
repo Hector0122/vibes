@@ -6,7 +6,11 @@ import {
   YOUTUBE_ID_RE,
   pickMeta,
   validateMeta,
+  validatePlaylists,
   type ApiError,
+  type CloudPlaylist,
+  type ListPlaylistsResponse,
+  type PutPlaylistsRequest,
   type CloudSong,
   type ListSongsResponse,
   type SongMeta,
@@ -17,6 +21,14 @@ import {
 import { isAuthorized } from './auth'
 import type { Env } from './env'
 import type { Presigner } from './presign'
+
+interface PlaylistRow {
+  id: string
+  name: string
+  song_ids: string
+  created_at: number
+  updated_at: number
+}
 
 interface SongRow {
   id: string
@@ -141,6 +153,38 @@ export function createApp(presign: Presigner): App {
     return { deleted: true }
   }
 
+  async function listPlaylists(env: Env): Promise<ListPlaylistsResponse> {
+    const { results } = await env.DB.prepare(
+      'SELECT id, name, song_ids, created_at, updated_at FROM playlists ORDER BY position'
+    ).all<PlaylistRow>()
+    return {
+      playlists: results.map(
+        (r): CloudPlaylist => ({
+          id: r.id,
+          name: r.name,
+          songIds: JSON.parse(r.song_ids) as string[],
+          createdAt: r.created_at,
+          updatedAt: r.updated_at
+        })
+      )
+    }
+  }
+
+  /** Replaces every playlist with the desktop's set, all or nothing. */
+  async function putPlaylists(env: Env, request: Request): Promise<ListPlaylistsResponse> {
+    const body = await readJson<PutPlaylistsRequest>(request)
+    const error = validatePlaylists(body)
+    if (error) fail(400, error)
+    const insert = 'INSERT INTO playlists (id, name, song_ids, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM playlists'),
+      ...body.playlists.map((p, i) =>
+        env.DB.prepare(insert).bind(p.id, p.name.trim(), JSON.stringify(p.songIds), i, p.createdAt, p.updatedAt)
+      )
+    ])
+    return listPlaylists(env)
+  }
+
   async function route(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
     if (!url.pathname.startsWith(API_PREFIX + '/')) fail(404, 'Not found')
@@ -149,6 +193,9 @@ export function createApp(presign: Presigner): App {
 
     if (path === '/health' && method === 'GET') return json({ ok: true })
     if (path === '/songs' && method === 'GET') return json(await listSongs(env))
+    if (path === '/playlists' && method === 'GET') return json(await listPlaylists(env))
+    if (path === '/playlists' && method === 'PUT') return json(await putPlaylists(env, request))
+    if (path === '/playlists') return fail(405, 'Method not allowed')
 
     const m = /^\/songs\/([^/]+)(\/(upload|commit|stream))?$/.exec(path)
     if (!m) return fail(404, 'Not found')

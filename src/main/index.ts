@@ -4,6 +4,7 @@ import { join } from 'path'
 import { YOUTUBE_ID_RE } from '../shared/api'
 import type { CloudSettingsInput, LocalSong, SearchResult, SongRef, TaskProgress } from '../shared/types'
 import { CloudClient } from './cloud/client'
+import { createPlaylistSync } from './cloud/playlist-sync'
 import { CloudSettingsStore } from './cloud/settings'
 import { startAudioServer } from './audio-server'
 import { Library } from './library'
@@ -52,6 +53,21 @@ async function main(): Promise<void> {
   await playlists.load()
   const settings = new CloudSettingsStore(join(userData, 'cloud.json'), safeStorage)
   const { port } = await startAudioServer(audioDir)
+  // Playlists are mirrored to the cloud (for the phone) after every change.
+  const playlistSync = createPlaylistSync({
+    list: () => playlists.list(),
+    client: async () => {
+      const active = await settings.active()
+      return active ? new CloudClient({ baseUrl: active.url, token: active.token, retries: 1 }) : null
+    },
+    onError: (err) => console.warn('No se pudieron subir las playlists:', (err as Error).message)
+  })
+  /** Runs a playlist change, then queues the cloud copy. */
+  const changed = async <T>(job: Promise<T>): Promise<T> => {
+    const out = await job
+    playlistSync.schedule()
+    return out
+  }
   const ctx: TaskContext = {
     library,
     audioDir,
@@ -125,19 +141,25 @@ async function main(): Promise<void> {
     return job
   })
   ipcMain.handle('playlists:list', () => playlists.list())
-  ipcMain.handle('playlists:create', (_e, name: string) => playlists.create(name))
-  ipcMain.handle('playlists:rename', (_e, id: string, name: string) => playlists.rename(id, name))
-  ipcMain.handle('playlists:delete', (_e, id: string) => playlists.remove(id))
+  ipcMain.handle('playlists:create', (_e, name: string) => changed(playlists.create(name)))
+  ipcMain.handle('playlists:rename', (_e, id: string, name: string) => changed(playlists.rename(id, name)))
+  ipcMain.handle('playlists:delete', (_e, id: string) => changed(playlists.remove(id)))
   ipcMain.handle('playlists:add', (_e, id: string, songIds: string[]) =>
     // Only songs that are in the library.
-    playlists.add(id, (Array.isArray(songIds) ? songIds : []).filter((s) => library.get(String(s))))
+    changed(playlists.add(id, (Array.isArray(songIds) ? songIds : []).filter((s) => library.get(String(s)))))
   )
-  ipcMain.handle('playlists:remove-song', (_e, id: string, songId: string) => playlists.removeSong(id, songId))
+  ipcMain.handle('playlists:remove-song', (_e, id: string, songId: string) =>
+    changed(playlists.removeSong(id, songId))
+  )
   ipcMain.handle('playlists:move', (_e, id: string, from: number, to: number) =>
-    playlists.move(id, Number(from), Number(to))
+    changed(playlists.move(id, Number(from), Number(to)))
   )
   ipcMain.handle('cloud:get-settings', () => settings.view())
-  ipcMain.handle('cloud:save-settings', (_e, input: CloudSettingsInput) => settings.save(input))
+  ipcMain.handle('cloud:save-settings', async (_e, input: CloudSettingsInput) => {
+    const view = await settings.save(input)
+    playlistSync.schedule() // a newly set-up cloud gets the playlists right away
+    return view
+  })
   ipcMain.handle('cloud:test', async (_e, input: CloudSettingsInput) => {
     try {
       const r = await settings.resolve({ url: input.url, token: input.token })
@@ -169,6 +191,8 @@ async function main(): Promise<void> {
 
   // In the background: real covers for songs added from YouTube earlier.
   enrichYoutubeSongs(ctx).catch(() => {})
+  // And the cloud gets the current playlists (in case they changed while offline).
+  playlistSync.schedule()
 }
 
 app.on('window-all-closed', () => app.quit())
