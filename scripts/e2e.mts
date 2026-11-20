@@ -73,6 +73,16 @@ interface App {
   eval: <T>(expr: string) => Promise<T>
 }
 
+/** Kills the app and waits until it has really exited (it keeps writing to its data folder until then). */
+async function stop(app: App): Promise<void> {
+  const { proc } = app
+  if (proc.exitCode !== null || proc.signalCode !== null) return
+  const exited = new Promise<void>((resolve) => proc.once('exit', () => resolve()))
+  proc.kill()
+  await Promise.race([exited, sleep(5000).then(() => proc.kill('SIGKILL'))])
+  await exited
+}
+
 async function launch(): Promise<App> {
   const proc = spawn(cmd, [...baseArgs, '--remote-debugging-port=0', '--no-sandbox'], { env, stdio: ['ignore', 'ignore', 'pipe'] })
   const port = await new Promise<string>((resolve, reject) => {
@@ -343,7 +353,7 @@ async function run(): Promise<void> {
     await waitFor(app, `${status}.includes('Configura la nube')`, 'cloud error')
     console.log('✓ upload without cloud:', await app.eval<string>(status))
   } finally {
-    app.proc.kill()
+    await stop(app)
   }
 
   // 8. Restart: the library (including the added song) and its audio survive.
@@ -360,14 +370,15 @@ async function run(): Promise<void> {
     await waitFor(app, `(() => { const l = document.querySelector('[data-testid=playlist-link]'); return !!l && l.textContent.includes('Para manejar') && l.textContent.endsWith('1') })()`, 'playlist after restart')
     console.log('✓ restart keeps the playlist')
   } finally {
-    app.proc.kill()
+    await stop(app)
   }
 }
 
 run()
   .then(() => {
     console.log('E2E OK')
-    rmSync(root, { recursive: true, force: true })
+    // Electron's helper processes can still be closing files for a moment.
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
   })
   .catch((err) => {
     console.error('E2E FAILED:', err)
