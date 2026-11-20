@@ -57,10 +57,13 @@ una versión, no en cada push ni en los PR: corre las pruebas localmente antes (
 - **Widget** en la pantalla de inicio (mantén presionado el fondo → Widgets → Vibes): canción actual y
   ⏮ ▶/⏸ ⏭ sin abrir la app. Con la app cerrada toca **solo lo descargado** (sin internet): retoma tu última
   canción si está descargada, si no, aleatorio de las descargadas.
-- **Playlists**: las de la computadora aparecen arriba como pestañas. En el celular: **+ Nueva**, deja
-  presionada una canción para agregarla a una playlist o quitarla, y ⋯ para renombrar o eliminar (necesita
-  internet; la compu recibe los cambios).
-- **Mantener descargada** una playlist: baja sola lo que le falte, también las canciones nuevas.
+- **Abajo: Inicio · Biblioteca · Buscar.** **Inicio**: accesos a tus playlists, *Recomendado para ti* y
+  tus artistas. **Biblioteca**: Canciones (recientes o **A–Z** con letras para saltar), Artistas y
+  Playlists; una playlist o un artista se abre con **Reproducir** y **Aleatorio**.
+- **Playlists**: las de la computadora aparecen en Biblioteca → Playlists. En el celular: **Nueva playlist**,
+  deja presionada una canción para agregarla a una playlist o quitarla, y ⋯ para renombrar o eliminar
+  (necesita internet; la compu recibe los cambios).
+- **Mantener descargada** una playlist (en su ⋯): baja sola lo que le falte, también las canciones nuevas.
   **Descargar solo con Wi-Fi** (activado): lo automático espera al Wi-Fi y una descarga a mano con datos
   pregunta antes.
 - **Sin internet**: ⬇ en cada canción, o "Descargar las N" para toda la lista o playlist. Las descargadas

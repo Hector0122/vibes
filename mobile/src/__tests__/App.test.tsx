@@ -168,6 +168,12 @@ beforeEach(() => {
 
 const nowPlaying = (): string => screen.getByTestId('now-playing').props.children
 
+/** The app opens on Inicio: this goes to Biblioteca. */
+async function renderLibrary(): Promise<void> {
+  await render(<App />)
+  await fireEvent.press(await screen.findByLabelText('Biblioteca'))
+}
+
 it('first run: set up the cloud, then the library appears', async () => {
   await render(<App />)
   await fireEvent.changeText(
@@ -177,6 +183,7 @@ it('first run: set up the cloud, then the library appears', async () => {
   await fireEvent.changeText(screen.getByTestId('token'), TOKEN)
   await fireEvent.press(screen.getByText('Guardar'))
 
+  await fireEvent.press(await screen.findByLabelText('Biblioteca'))
   expect(await screen.findByText('3 canciones en tu nube')).toBeTruthy()
   expect(JSON.parse(store.mockStore.get('vibes.cloud')!)).toEqual({
     url: 'https://vibes-cloud.example.workers.dev',
@@ -203,7 +210,7 @@ describe('with the cloud set up', () => {
   })
 
   it('tap a song: it streams from a signed URL, the next one is already queued natively, and Android moves on by itself', async () => {
-    await render(<App />)
+    await renderLibrary()
     await fireEvent.press(await screen.findByTestId('song-bbbbbbbbbbb'))
     await waitFor(() =>
       expect(audio.mockPlaylist.played).toEqual(['https://r2.test/songs/bbbbbbbbbbb.m4a?sig=1'])
@@ -230,7 +237,7 @@ describe('with the cloud set up', () => {
   })
 
   it('tap the player: the song big, with synced lyrics that follow the music (saved for offline)', async () => {
-    await render(<App />)
+    await renderLibrary()
     await fireEvent.press(await screen.findByTestId('song-aaaaaaaaaaa'))
     await waitFor(() => expect(nowPlaying()).toBe('Afuera'))
     await fireEvent.press(screen.getByLabelText('Abrir lo que suena'))
@@ -243,7 +250,7 @@ describe('with the cloud set up', () => {
   })
 
   it('lock screen ⏭ and ⏮ (the native list moves; the app follows)', async () => {
-    await render(<App />)
+    await renderLibrary()
     await fireEvent.press(await screen.findByTestId('song-aaaaaaaaaaa'))
     await waitFor(() => expect(audio.mockPlaylist.uris).toHaveLength(2))
     await act(() => audio.mockPlaylist.next()) // ⏭ from the lock screen
@@ -255,7 +262,7 @@ describe('with the cloud set up', () => {
   })
 
   it('pause, play, previous and next buttons', async () => {
-    await render(<App />)
+    await renderLibrary()
     await fireEvent.press(await screen.findByTestId('song-aaaaaaaaaaa'))
     await waitFor(() => expect(nowPlaying()).toBe('Afuera'))
     await fireEvent.press(screen.getByLabelText('Pausar'))
@@ -269,7 +276,7 @@ describe('with the cloud set up', () => {
   })
 
   it('search narrows the list, and what plays next stays within it', async () => {
-    await render(<App />)
+    await renderLibrary()
     await screen.findByTestId('song-aaaaaaaaaaa')
     await fireEvent.changeText(screen.getByTestId('search'), 'cal')
     expect(screen.queryByTestId('song-aaaaaaaaaaa')).toBeNull()
@@ -282,7 +289,7 @@ describe('with the cloud set up', () => {
   })
 
   it('shuffle plays every song once before repeating, never the same twice in a row', async () => {
-    await render(<App />)
+    await renderLibrary()
     await screen.findByTestId('song-aaaaaaaaaaa')
     await fireEvent.press(screen.getAllByLabelText('Aleatorio')[0]) // the header button: shuffle all
     await waitFor(() => expect(audio.mockPlaylist.played).toHaveLength(1))
@@ -296,7 +303,7 @@ describe('with the cloud set up', () => {
   })
 
   it('after a long pause it gets a fresh signed URL and resumes where it was', async () => {
-    await render(<App />)
+    await renderLibrary()
     await fireEvent.press(await screen.findByTestId('song-aaaaaaaaaaa'))
     await waitFor(() => expect(audio.mockPlaylist.played).toHaveLength(1))
     await act(() => audio.mockPlaylistStatus({ currentTime: 95 }))
@@ -319,7 +326,7 @@ describe('with the cloud set up', () => {
       'vibes.cloud',
       JSON.stringify({ url: 'https://w.example.dev', token: 'old' })
     )
-    await render(<App />)
+    await renderLibrary()
     expect(await screen.findByTestId('error')).toHaveTextContent('Token de la nube inválido')
     expect(screen.getByText('0 canciones en tu nube')).toBeTruthy()
   })
@@ -338,7 +345,7 @@ describe('with the cloud set up', () => {
     await render(<App />)
     await fireEvent.press(await screen.findByText('Rock en tu idioma'))
     expect(screen.getByTestId('title')).toHaveTextContent('Rock en tu idioma')
-    expect(screen.getByTestId('count')).toHaveTextContent('2 canciones')
+    expect(screen.getByTestId('count')).toHaveTextContent('2 canciones · 7 min')
     expect(screen.queryByTestId('song-bbbbbbbbbbb')).toBeNull()
 
     await fireEvent.press(screen.getByTestId('song-ccccccccccc'))
@@ -346,12 +353,31 @@ describe('with the cloud set up', () => {
     await fireEvent.press(screen.getByLabelText('Siguiente'))
     await waitFor(() => expect(nowPlaying()).toBe('Afuera'))
 
-    await fireEvent.press(screen.getByText('Todas'))
+    await fireEvent.press(screen.getByLabelText('Volver'))
     expect(await screen.findByTestId('song-bbbbbbbbbbb')).toBeTruthy()
   })
 
-  it('download a song: from then on it plays from the phone, not a signed URL', async () => {
+  it('Inicio: tap an artist and only their songs show; Biblioteca sorts A–Z with letters', async () => {
     await render(<App />)
+    await fireEvent.press(await screen.findByLabelText('Artista: Caifanes'))
+    expect(screen.getByTestId('title')).toHaveTextContent('Caifanes')
+    expect(await screen.findByTestId('song-aaaaaaaaaaa')).toBeTruthy()
+    expect(screen.queryByTestId('song-bbbbbbbbbbb')).toBeNull()
+
+    await fireEvent.press(screen.getByLabelText('Volver'))
+    await fireEvent.press(screen.getByLabelText('Ordenar de la A a la Z'))
+    const order = screen.getAllByTestId(/^song-/).map((e) => e.props.testID)
+    expect(order).toEqual(['song-aaaaaaaaaaa', 'song-ccccccccccc', 'song-bbbbbbbbbbb'])
+    expect(screen.getByLabelText('Ir a la F')).toBeTruthy()
+    // What plays next follows the order on screen.
+    await fireEvent.press(screen.getByTestId('song-aaaaaaaaaaa'))
+    await waitFor(() => expect(nowPlaying()).toBe('Afuera'))
+    await fireEvent.press(screen.getByLabelText('Siguiente'))
+    await waitFor(() => expect(nowPlaying()).toBe('Flaca'))
+  })
+
+  it('download a song: from then on it plays from the phone, not a signed URL', async () => {
+    await renderLibrary()
     await fireEvent.press(await screen.findByLabelText('Descargar: Sin Documentos'))
     expect(await screen.findByLabelText('Quitar del teléfono: Sin Documentos')).toBeTruthy()
     expect(screen.getByTestId('downloaded-count')).toHaveTextContent('1 en el teléfono')
@@ -379,7 +405,7 @@ describe('with the cloud set up', () => {
     fs.mockDisk.set('file:///docs/vibes/songs/bbbbbbbbbbb.m4a', 'x')
     fs.mockDisk.set('file:///docs/vibes/songs/ccccccccccc.m4a', 'x')
     online = false
-    await render(<App />)
+    await renderLibrary()
     expect(await screen.findByTestId('offline')).toBeTruthy()
     expect(await screen.findByTestId('song-bbbbbbbbbbb')).toBeTruthy()
     expect(screen.queryByTestId('song-aaaaaaaaaaa')).toBeNull()
@@ -416,7 +442,8 @@ describe('with the cloud set up', () => {
     expect([...fs.mockDisk.keys()].filter((k) => k.includes('/songs/'))).toEqual([
       'file:///docs/vibes/songs/aaaaaaaaaaa.m4a'
     ])
-    // "Only downloaded" narrows the list to what's on the phone.
+    // "Only downloaded" narrows the whole library to what's on the phone.
+    await fireEvent.press(screen.getByLabelText('Volver'))
     await fireEvent.press(screen.getByLabelText('Solo descargadas'))
     expect(screen.queryByTestId('song-ccccccccccc')).toBeNull()
     expect(screen.getByTestId('song-aaaaaaaaaaa')).toBeTruthy()
@@ -427,7 +454,7 @@ describe('with the cloud set up', () => {
       buttons?.find((b) => b.style === 'destructive')?.onPress?.()
     })
     try {
-      await render(<App />)
+      await renderLibrary()
       await fireEvent.press(await screen.findByLabelText('Descargar: Afuera'))
       await fireEvent.press(await screen.findByLabelText('Descargar: Flaca'))
       await screen.findByLabelText('Quitar del teléfono: Flaca')
@@ -452,7 +479,7 @@ describe('with the cloud set up', () => {
   })
 
   it('search (Deezer), listen to the 30-second clip, mark a song: it waits for the computer; cancel it', async () => {
-    await render(<App />)
+    await renderLibrary()
     await fireEvent.press(await screen.findByLabelText('Agregar música'))
     await fireEvent.changeText(screen.getByTestId('yt-search'), 'soda stereo')
     await fireEvent(screen.getByTestId('yt-search'), 'submitEditing')
@@ -490,7 +517,7 @@ describe('with the cloud set up', () => {
         createdAt: 0
       }
     ]
-    await render(<App />)
+    await renderLibrary()
     expect(await screen.findByText('Video no disponible')).toBeTruthy()
     await fireEvent.press(screen.getByLabelText('Reintentar: Persiana Americana'))
     await waitFor(() => expect(screen.queryByText('Video no disponible')).toBeNull())
@@ -508,7 +535,7 @@ describe('with the cloud set up', () => {
           } as Response)
         : base(input, init)
     ) as unknown as typeof fetch
-    await render(<App />)
+    await renderLibrary()
     await fireEvent.press(await screen.findByLabelText('Agregar música'))
     await fireEvent.changeText(screen.getByTestId('yt-search'), 'x')
     await fireEvent(screen.getByTestId('yt-search'), 'submitEditing')
@@ -518,7 +545,7 @@ describe('with the cloud set up', () => {
   })
 
   it('suggestions from the computer show before searching, can be previewed (clip found on Deezer) and marked', async () => {
-    await render(<App />)
+    await renderLibrary()
     await fireEvent.press(await screen.findByLabelText('Agregar música'))
     expect(await screen.findByText('Recomendado para ti')).toBeTruthy()
     expect(screen.getByText('Por escuchar Afuera')).toBeTruthy()
@@ -555,7 +582,8 @@ describe('kept playlists and Wi-Fi', () => {
   it('"Mantener descargada" downloads the playlist, and keeps doing it after a refresh', async () => {
     await render(<App />)
     await fireEvent.press(await screen.findByText('Viaje'))
-    await fireEvent(screen.getByLabelText('Mantener descargada'), 'valueChange', true)
+    await fireEvent.press(screen.getByLabelText('Opciones de la playlist'))
+    await fireEvent.press(await screen.findByLabelText('Mantener descargada'))
     await waitFor(() => expect(fs.mockDownloads.urls).toHaveLength(2))
     expect(JSON.parse(fs.mockDisk.get('file:///docs/vibes/prefs.json')!)).toEqual({
       wifiOnly: true,
@@ -575,7 +603,7 @@ describe('kept playlists and Wi-Fi', () => {
     net.mockNetwork.type = net.NetworkStateType.CELLULAR
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {})
     try {
-      await render(<App />)
+      await renderLibrary()
       await screen.findByTestId('song-bbbbbbbbbbb')
       await act(() => new Promise((r) => setTimeout(r, 20)))
       expect(fs.mockDownloads.urls).toEqual([])
@@ -608,21 +636,24 @@ describe('editing playlists on the phone', () => {
   })
 
   it('new playlist, add a song with a long press, remove it, rename, delete', async () => {
-    await render(<App />)
-    await fireEvent.press(await screen.findByText('+ Nueva'))
+    await renderLibrary()
+    await fireEvent.press(await screen.findByText('Playlists'))
+    await fireEvent.press(await screen.findByText('Nueva playlist'))
     await fireEvent.changeText(screen.getByTestId('playlist-name'), 'Gym')
     await fireEvent.press(screen.getByText('Guardar'))
     expect(await screen.findByText('Gym')).toBeTruthy()
     expect(OPS).toMatchObject([{ type: 'create', name: 'Gym' }])
     const gym = OPS[0].id
 
-    await fireEvent(screen.getByTestId('song-ccccccccccc'), 'longPress')
+    await fireEvent.press(screen.getByText('Canciones'))
+    await fireEvent(await screen.findByTestId('song-ccccccccccc'), 'longPress')
     await fireEvent.press(await screen.findByText('Agregar a «Gym»'))
     await waitFor(() =>
       expect(OPS.at(-1)).toEqual({ type: 'add', id: gym, songIds: ['ccccccccccc'] })
     )
 
-    await fireEvent.press(screen.getByText('Gym'))
+    await fireEvent.press(screen.getByText('Playlists'))
+    await fireEvent.press(await screen.findByText('Gym'))
     expect(await screen.findByTestId('song-ccccccccccc')).toBeTruthy()
     await fireEvent(screen.getByTestId('song-ccccccccccc'), 'longPress')
     await fireEvent.press(await screen.findByText('Quitar de «Gym»'))
@@ -641,20 +672,22 @@ describe('editing playlists on the phone', () => {
       await fireEvent.press(screen.getByLabelText('Opciones de la playlist'))
       await fireEvent.press(await screen.findByText('Eliminar playlist'))
       await waitFor(() => expect(PLAYLISTS.map((p) => p.id)).toEqual(['p1']))
-      expect(screen.getByTestId('title')).toHaveTextContent('Tu música')
+      expect(screen.getByTestId('title')).toHaveTextContent('Biblioteca')
     } finally {
       alert.mockRestore()
     }
   })
 
   it('without internet the edit is undone and says why', async () => {
-    await render(<App />)
+    await renderLibrary()
     await screen.findByTestId('song-ccccccccccc')
     online = false
     await fireEvent(screen.getByTestId('song-ccccccccccc'), 'longPress')
     await fireEvent.press(await screen.findByText('Agregar a «Viaje»'))
     expect(await screen.findByText('Necesitas internet para editar las playlists')).toBeTruthy()
-    await fireEvent.press(screen.getByText('Viaje'))
+    await fireEvent.press(screen.getByText('Playlists'))
+    await fireEvent.press(await screen.findByText('Viaje'))
+    expect(await screen.findByTestId('title')).toHaveTextContent('Viaje')
     expect(screen.queryByTestId('song-ccccccccccc')).toBeNull()
   })
 })

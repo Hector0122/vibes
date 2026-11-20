@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons'
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { colors } from '../theme'
 
@@ -5,6 +6,8 @@ export interface Action {
   label: string
   onPress: () => void
   destructive?: boolean
+  /** A setting: shows a check when on. */
+  checked?: boolean
 }
 
 /** A list of choices that slides up (song and playlist menus). */
@@ -31,6 +34,8 @@ export function ActionSheet(props: {
             {props.actions.map((a) => (
               <Pressable
                 key={a.label}
+                accessibilityLabel={a.label}
+                accessibilityState={a.checked === undefined ? undefined : { checked: a.checked }}
                 style={styles.option}
                 onPress={() => {
                   props.onClose()
@@ -40,6 +45,13 @@ export function ActionSheet(props: {
                 <Text style={[styles.optionText, a.destructive && { color: colors.red }]}>
                   {a.label}
                 </Text>
+                {a.checked !== undefined && (
+                  <Ionicons
+                    name={a.checked ? 'checkmark-circle' : 'ellipse-outline'}
+                    size={22}
+                    color={a.checked ? colors.pink : colors.faint}
+                  />
+                )}
               </Pressable>
             ))}
           </ScrollView>
@@ -60,6 +72,10 @@ const styles = StyleSheet.create({
   },
   title: { color: colors.text, fontSize: 18, fontWeight: '700' },
   subtitle: { color: colors.muted, fontSize: 13, marginTop: 2, marginBottom: 6 },
-  option: { paddingVertical: 14, borderBottomColor: colors.border, borderBottomWidth: 1 },
+  option: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14, borderBottomColor: colors.border, borderBottomWidth: 1 },
   optionText: { color: colors.text, fontSize: 16 }
 })
