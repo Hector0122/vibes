@@ -12,7 +12,7 @@
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "pnpm typecheck:node && pnpm typecheck:web",
     "build": "pnpm typecheck && electron-vite build",
-    "build:linux": "pnpm build && electron-builder --linux",
+    "build:linux": "pnpm build && electron-builder --linux --publish never",
     "test": "vitest run",
     "test:e2e": "pnpm build && node scripts/e2e.mts",
     "test:e2e:dist": "VIBES_APP_BIN=dist/linux-unpacked/vibes node scripts/e2e.mts"
