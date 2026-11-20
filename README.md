@@ -17,8 +17,9 @@ En **[Releases](../../releases)** de GitHub, cada versión (`v1.0.0`, …) trae:
 - `vibes-<versión>.apk` → Android (permite apps de "fuentes desconocidas"); también corre en Waydroid:
   `waydroid app install vibes-*.apk`
 
-Para sacar una versión: sube el número en `package.json` y `mobile/app.json`, y publica una etiqueta
-`git tag -a vX.Y.Z -m "Vibes X.Y.Z" && git push origin vX.Y.Z`. GitHub Actions corre todas las pruebas,
+Para sacar una versión: sube el número en `package.json` y `mobile/app.json` (y `versionCode`), y publica una
+etiqueta `git tag -a vX.Y.Z -m "Vibes X.Y.Z" && git push origin vX.Y.Z`, o desde GitHub (también en el
+celular): **Actions → CI → Run workflow** en `main` con la versión. La app del celular avisa sola de la nueva. GitHub Actions corre todas las pruebas,
 arma los instaladores y crea la release (~25 min, la APK es lo más lento). Cada push a `main` también deja
 los instaladores como *Artifacts* de la corrida.
 
