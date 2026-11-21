@@ -127,3 +127,18 @@ it('a song listened to for 30 s counts one play, sent to the cloud (kept while o
   expect(sent).toEqual([{ id: 'aaaaaaaaaaa', at: clock }])
   expect(JSON.parse(fs.mockDisk.get('file:///docs/vibes/plays.json')!)).toEqual([])
 })
+
+it('keeps going song after song on its own (shuffle, screen off)', async () => {
+  const many = 'defghijk'.split('').map((c) => song(c.repeat(11), c))
+  for (const s of many) fs.mockDisk.set(`file:///docs/vibes/songs/${s.id}.m4a`, 'x')
+  e.setQueue(many)
+  e.setShuffle(true)
+  await e.play(many[0].id)
+  await flush()
+  for (let i = 0; i < 6; i++) {
+    audio.mockPlaylistFinish()
+    await flush()
+  }
+  expect(audio.mockPlaylist.played).toHaveLength(7)
+  expect(e.state.current?.id).toBe(audio.mockPlaylist.uris[audio.mockPlaylist.currentIndex].match(/songs\/(\w+)\./)![1])
+})

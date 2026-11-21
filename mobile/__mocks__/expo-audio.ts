@@ -88,9 +88,14 @@ function plEmit(patch: Partial<PlStatus> = {}): void {
     l({ ...plStatus, currentIndex: mockPlaylist.currentIndex })
   )
 }
+// Like expo-audio on Android: trackChanged fires only when the index differs from the
+// last one it reported, which is not updated when items before the current one are removed.
+let lastReported = 0
 function plTrackChanged(prev: number): void {
   plStatus = { ...plStatus, currentTime: 0 }
   if (plStatus.playing) mockPlaylist.played.push(mockPlaylist.uris[mockPlaylist.currentIndex])
+  if (mockPlaylist.currentIndex === lastReported) return plEmit()
+  lastReported = mockPlaylist.currentIndex
   plListeners.trackChanged.forEach((l) =>
     l({ previousIndex: prev, currentIndex: mockPlaylist.currentIndex })
   )
@@ -115,6 +120,7 @@ export const mockPlaylist = {
   clear: jest.fn(() => {
     mockPlaylist.uris = []
     mockPlaylist.currentIndex = 0
+    lastReported = 0
     plStatus = { ...plStatus, playing: false, currentTime: 0 }
   }),
   play: jest.fn(() => {
@@ -164,6 +170,7 @@ export function mockPlaylistReset(): void {
   plListeners.trackChanged.clear()
   mockPlaylist.uris = []
   mockPlaylist.currentIndex = 0
+  lastReported = 0
   mockPlaylist.played = []
   plStatus = {
     playing: false,

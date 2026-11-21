@@ -112,6 +112,8 @@ describe('pickNext wrapped (the list ran out: the radio takes over)', () => {
     expect(pickNext(Q, null, true, []).wrapped).toBe(false)
     expect(pickNext(Q, 'a', true, ['b']).wrapped).toBe(false)
     expect(pickNext(Q, 'b', true, []).wrapped).toBe(true)
+    // A song picked by hand before any round started: the player passes the whole list.
+    expect(pickNext(Q, 'b', true, Q).wrapped).toBe(false)
     expect(pickNext(Q, 'gone', true, []).wrapped).toBe(false) // a preview from outside the list
   })
 })

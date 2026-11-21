@@ -265,6 +265,9 @@ export class Engine {
   }
 
   private onStatus(s: AudioPlaylistStatus & { error?: { message?: string } }): void {
+    // Android skips trackChanged when the new index equals the last one it reported, which
+    // happens once we trim songs off the front, so catch the change here too.
+    this.onTrackChanged()
     const sleep = this.state.sleep
     if (sleep && 'at' in sleep && s.playing && this.now() >= sleep.at) {
       this.pl?.pause()

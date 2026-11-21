@@ -70,7 +70,8 @@ export function Player({
   const [duration, setDuration] = useState(0)
   const [volume, setVolume] = useState(loadVolume)
   const [muted, setMuted] = useState(false)
-  const bag = useRef<string[]>([]) // shuffle: songs still to play this round
+  // shuffle: songs still to play this round; null = not started, so an empty bag really means the round is over
+  const bag = useRef<string[] | null>(null)
   const history = useRef<string[]>([]) // what played, for "Anterior"
   const lastId = useRef<string | null>(null)
   const goingBack = useRef(false)
@@ -104,9 +105,9 @@ export function Player({
 
   /** `auto`: the song ended by itself (not a click), so the radio may take over at the end of the list. */
   function next(auto = false): void {
-    const n = pickNext(ids, song?.id ?? null, shuffle, bag.current)
+    const n = pickNext(ids, song?.id ?? null, shuffle, bag.current ?? ids)
     if (auto && radio && song && (n.wrapped || n.id === null || !ids.includes(song.id))) {
-      bag.current = []
+      bag.current = null
       return onQueueEnd(song)
     }
     bag.current = n.bag
@@ -133,10 +134,10 @@ export function Player({
     else setPlaying(false)
   }
 
-  // Turning shuffle on or off starts a fresh round.
+  // Turning shuffle on or off, or another list (a playlist, the radio), starts a fresh round.
   useEffect(() => {
-    bag.current = []
-  }, [shuffle])
+    bag.current = null
+  }, [shuffle, queueLabel])
 
   useEffect(() => {
     const el = audio.current
@@ -158,7 +159,7 @@ export function Player({
     counted.current = false
     if (!song || !el) return
     // Picked by hand: don't play it again later in this shuffle round.
-    bag.current = bag.current.filter((id) => id !== song.id)
+    if (bag.current) bag.current = bag.current.filter((id) => id !== song.id)
     let cancelled = false
     setLoading(true)
     window.api.audioUrl(song.id).then((url) => {
