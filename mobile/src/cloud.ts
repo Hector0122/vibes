@@ -15,7 +15,9 @@ import {
   type SearchHit,
   type SearchResponse,
   type SongRequest,
-  type StreamResponse
+  type StreamResponse,
+  type UploadBeginRequest,
+  type UploadBeginResponse
 } from '../../src/shared/api'
 
 export class CloudError extends Error {
@@ -46,6 +48,10 @@ export interface Cloud {
   sendPlays(plays: Play[]): Promise<void>
   /** A signed R2 URL, valid for 15 minutes. */
   streamUrl(id: string): Promise<string>
+  /** Starts uploading a file (an audiobook chapter): where to PUT it, or null if the cloud has it. */
+  beginUpload(id: string, req: UploadBeginRequest): Promise<UploadBeginResponse>
+  /** The file is in the cloud: list it. */
+  commit(id: string): Promise<CloudSong>
 }
 
 /** "https://x.workers.dev/" → "https://x.workers.dev"; '' when it isn't an https URL. */
@@ -135,6 +141,9 @@ export function createCloud(opts: {
       call<ListPlaylistsResponse>('/playlists/ops', 'POST', { ops }).then((r) => r.playlists),
     sendPlays: (plays) => call<unknown>('/plays', 'POST', { plays }).then(() => undefined),
     streamUrl: (id) =>
-      call<StreamResponse>(`/songs/${encodeURIComponent(id)}/stream`).then((r) => r.url)
+      call<StreamResponse>(`/songs/${encodeURIComponent(id)}/stream`).then((r) => r.url),
+    beginUpload: (id, req) =>
+      call<UploadBeginResponse>(`/songs/${encodeURIComponent(id)}/upload`, 'POST', req),
+    commit: (id) => call<CloudSong>(`/songs/${encodeURIComponent(id)}/commit`, 'POST')
   }
 }

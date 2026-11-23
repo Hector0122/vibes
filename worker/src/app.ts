@@ -1,6 +1,7 @@
 import {
   API_PREFIX,
   MAX_AUDIO_BYTES,
+  MAX_BOOK_BYTES,
   MAX_QUERY,
   MAX_REQUESTS,
   PRESIGN_EXPIRES_SECONDS,
@@ -149,7 +150,8 @@ export function createApp(presign: Presigner, opts: AppOptions = {}): App {
     const body = await readJson<UploadBeginRequest>(request)
     const metaError = validateMeta(body?.meta)
     if (metaError) fail(400, metaError)
-    if (!Number.isSafeInteger(body.size) || body.size <= 0 || body.size > MAX_AUDIO_BYTES) {
+    const max = body.meta.book ? MAX_BOOK_BYTES : MAX_AUDIO_BYTES
+    if (!Number.isSafeInteger(body.size) || body.size <= 0 || body.size > max) {
       fail(400, 'Invalid size')
     }
     if (typeof body.sha256 !== 'string' || !SHA256_RE.test(body.sha256)) fail(400, 'Invalid sha256')

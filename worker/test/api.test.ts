@@ -72,6 +72,18 @@ describe('upload → commit → list', () => {
     expect(song).toMatchObject({ id: SONG_ID, ...META, size: 10, sha256: hash('a') })
   })
 
+  it('audiobook chapters keep their book and chapter, and may be bigger than a song', async () => {
+    const big = 500 * 1024 * 1024
+    const book = { ...META, title: 'Capítulo 1', book: 'Dune', chapter: 1 }
+    expect((await h.call('POST', `/v1/songs/${SONG_ID}/upload`, { meta: META, size: big, sha256: hash('a') })).status).toBe(400)
+    await begin(big, hash('a'), book)
+    putAudio(h.r2, SONG_ID, big)
+    expect((await h.call('POST', `/v1/songs/${SONG_ID}/commit`)).status).toBe(200)
+    expect((await listSongs())[0]).toMatchObject({ title: 'Capítulo 1', book: 'Dune', chapter: 1 })
+    const bad = { ...book, chapter: 0 }
+    expect((await h.call('POST', `/v1/songs/${SONG_ID}/upload`, { meta: bad, size: 10, sha256: hash('a') })).status).toBe(400)
+  })
+
   it('skips the upload when R2 already has the same file, and keeps it listed', async () => {
     await uploadComplete()
     const { url } = await begin(10, hash('a'), { ...META, title: 'Renamed' })

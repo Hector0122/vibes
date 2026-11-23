@@ -10,6 +10,8 @@ export type { Sleep }
 
 export interface Player extends PlayerState {
   play: (id: string) => Promise<void>
+  /** A chapter of an audiobook (its chapters in order), from `from` seconds. */
+  playBook: (chapters: CloudSong[], id: string, from?: number) => Promise<void>
   toggle: () => void
   /** Pauses if playing (e.g. while a preview clip plays). */
   pause: () => void
@@ -27,6 +29,7 @@ export function usePlayer(cloud: Cloud | null, queue: CloudSong[]): Player {
   return {
     ...state,
     play: (id) => engine.play(id),
+    playBook: (chapters, id, from) => engine.playBook(chapters, id, from),
     toggle: engine.toggle,
     pause: engine.pause,
     next: engine.next,

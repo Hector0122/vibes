@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react'
 import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 import { colors } from '../theme'
 
-/** Asks for a playlist name (new, or renaming). */
+/** Asks for a name: a playlist's (new, or renaming) or an audiobook's. */
 export function NameDialog(props: {
   visible: boolean
   title: string
   initial?: string
+  placeholder?: string
   onCancel: () => void
   onSave: (name: string) => void
 }): React.JSX.Element {
@@ -25,7 +26,7 @@ export function NameDialog(props: {
             style={styles.input}
             value={name}
             onChangeText={setName}
-            placeholder="Nombre de la playlist"
+            placeholder={props.placeholder ?? 'Nombre de la playlist'}
             placeholderTextColor={colors.faint}
             autoFocus
             maxLength={100}

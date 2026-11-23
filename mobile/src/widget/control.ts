@@ -25,7 +25,7 @@ async function bootFromDisk(): Promise<void> {
   }
   const [snapshot, downloads] = await Promise.all([loadSnapshot(), loadDownloads()])
   const downloaded = (snapshot?.songs ?? []).filter((s) => downloads[s.id])
-  engine.setQueue(downloaded)
+  engine.setQueue(downloaded.filter((s) => !s.book)) // music only; a book resumes from its chapters
   await engine.restore(downloaded, { onlyFrom: true })
 }
 

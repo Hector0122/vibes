@@ -1,3 +1,4 @@
+import { File } from 'expo-file-system'
 import { StatusBar } from 'expo-status-bar'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ActivityIndicator, Alert, Linking, StyleSheet, View } from 'react-native'
@@ -8,6 +9,7 @@ import {
   type PlaylistOp,
   type SongRequest
 } from '../src/shared/api'
+import { chaptersOf, groupBooks, guessBookName, isBook, uploadBook, type PickedFile } from './src/books'
 import { CloudError, createCloud, type Cloud } from './src/cloud'
 import { ActionSheet, type Action } from './src/components/ActionSheet'
 import { NameDialog } from './src/components/NameDialog'
@@ -15,10 +17,12 @@ import { PlayerBar } from './src/components/PlayerBar'
 import { TabBar, type Tab } from './src/components/TabBar'
 import {
   DEFAULT_PREFS,
+  loadBookPositions,
   loadPrefs,
   loadSnapshot,
   savePrefs,
   saveSnapshot,
+  type BookPositions,
   type Prefs
 } from './src/offline'
 import { onWifi } from './src/network'
@@ -71,7 +75,12 @@ export default function App(): React.JSX.Element {
     title: string
     initial?: string
     save: (name: string) => void
+    placeholder?: string
   } | null>(null)
+  /** Libros: the open audiobook, where each was left, and the upload running. */
+  const [book, setBook] = useState<string | null>(null)
+  const [positions, setPositions] = useState<BookPositions>({})
+  const [upload, setUpload] = useState<string | null>(null)
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS)
 
   const cloud: Cloud | null = useMemo(() => {
@@ -201,20 +210,25 @@ export default function App(): React.JSX.Element {
 
   const byId = useMemo(() => new Map(songs.map((s) => [s.id, s])), [songs])
   const selected = playlists.find((p) => p.id === playlistId) ?? null
+  // Audiobook chapters live in Libros only, never with the music.
+  const music = useMemo(() => songs.filter((s) => !isBook(s)), [songs])
   const shown = useMemo(() => {
     const base = selected
       ? selected.songIds.map((id) => byId.get(id)).filter((s): s is CloudSong => !!s)
       : artist
-        ? songs.filter((s) => mainArtist(s) === artist)
-        : songs
+        ? music.filter((s) => mainArtist(s) === artist)
+        : book
+          ? chaptersOf(songs, book)
+          : music
     return offline || onlyDownloaded ? base.filter((s) => localUri(s.id)) : base
-  }, [selected, artist, byId, songs, offline, onlyDownloaded, localUri])
+  }, [selected, artist, book, byId, songs, music, offline, onlyDownloaded, localUri])
   // Offline, only what's on the phone counts.
   const available = useMemo(
     () => (offline ? songs.filter((s) => localUri(s.id)) : songs),
     [offline, songs, localUri]
   )
-  const artists = useMemo(() => groupArtists(available), [available])
+  const artists = useMemo(() => groupArtists(available.filter((s) => !isBook(s))), [available])
+  const books = useMemo(() => groupBooks(available), [available])
   const playlistCards = useMemo(
     () =>
       playlists.map((p) => {
@@ -229,14 +243,59 @@ export default function App(): React.JSX.Element {
     [playlists, byId]
   )
   const openPlaylist = (id: string | null): void => {
+    setBook(null)
     setArtist(null)
     setPlaylistId(id)
     setTab('library')
   }
   const openArtist = (name: string | null): void => {
+    setBook(null)
     setPlaylistId(null)
     setArtist(name)
     setTab('library')
+  }
+  const openBook = (name: string): void => {
+    setPlaylistId(null)
+    setArtist(null)
+    setBook(name)
+    void loadBookPositions().then(setPositions, () => {})
+  }
+  /** "Continuar": where the book was left, else its first chapter. */
+  const left = book ? positions[book] : undefined
+  const continueBook = async (name: string, chapters: CloudSong[]): Promise<void> => {
+    const at = (await loadBookPositions())[name] // fresh: it moves as you listen
+    if (at && chapters.some((c) => c.id === at.id)) await player.playBook(chapters, at.id, at.time)
+    else if (chapters[0]) await player.playBook(chapters, chapters[0].id)
+  }
+
+  /** Audio files picked on the phone go up as a book's chapters (after the ones it has). */
+  const sendBook = async (name: string, files: PickedFile[]): Promise<void> => {
+    if (!cloud) return
+    setError(null)
+    setUpload('Preparando…')
+    try {
+      await uploadBook(cloud, files, name, chaptersOf(songs, name).length, (u) =>
+        setUpload(
+          `${u.step === 'hash' ? 'Preparando' : 'Subiendo'} ${u.total > 1 ? `${u.file} de ${u.total} · ` : ''}${Math.round(u.fraction * 100)}%`
+        )
+      )
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setUpload(null)
+      void refresh()
+    }
+  }
+  const pickBook = async (): Promise<void> => {
+    const picked = await File.pickFileAsync({ multipleFiles: true, mimeTypes: 'audio/*' })
+    if (picked.canceled || picked.result.length === 0) return
+    const files = picked.result.map((f) => ({ uri: f.uri, name: f.name }))
+    setNaming({
+      title: 'Nombre del audiolibro',
+      placeholder: 'Nombre del libro',
+      initial: book ?? guessBookName(files[0].name),
+      save: (name) => void sendBook(name, files)
+    })
   }
 
   const downloadState = (s: CloudSong): DownloadState =>
@@ -443,18 +502,25 @@ export default function App(): React.JSX.Element {
       ) : (
         <LibraryScreen
           songs={shown}
-          total={songs.length}
+          total={music.length}
           title={selected?.name ?? artist ?? 'Biblioteca'}
           loading={loading}
           error={error ?? downloads.error}
           offline={offline}
           onRefresh={refresh}
           currentId={player.current?.id ?? null}
-          onPlay={(id) => void player.play(id)}
+          onPlay={(id) => void (book ? player.playBook(shown, id) : player.play(id))}
           onPlayAll={(visible) => {
+            if (book) return void continueBook(book, shown)
             player.setShuffle(false)
             if (visible[0]) void player.play(visible[0].id)
           }}
+          playLabel={book && left ? 'Continuar' : undefined}
+          books={books}
+          book={book}
+          onSelectBook={openBook}
+          onUploadBook={cloud ? () => void pickBook() : undefined}
+          upload={upload}
           onShuffleAll={(visible) => {
             player.setShuffle(true)
             const pick = visible[Math.floor(Math.random() * visible.length)]
@@ -472,6 +538,7 @@ export default function App(): React.JSX.Element {
           onBack={() => {
             setPlaylistId(null)
             setArtist(null)
+            setBook(null)
           }}
           downloadedCount={downloads.count}
           onlyDownloaded={onlyDownloaded}
@@ -508,6 +575,7 @@ export default function App(): React.JSX.Element {
         visible={!!naming}
         title={naming?.title ?? ''}
         initial={naming?.initial}
+        placeholder={naming?.placeholder}
         onCancel={() => setNaming(null)}
         onSave={(name) => {
           naming?.save(name)

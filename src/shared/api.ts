@@ -8,6 +8,8 @@ export const YOUTUBE_ID_RE = /^[A-Za-z0-9_-]{11}$/
 export const SHA256_RE = /^[0-9a-f]{64}$/
 /** One song file; long DJ sets aside, 100 MB is far above any m4a track. */
 export const MAX_AUDIO_BYTES = 100 * 1024 * 1024
+/** An audiobook file can be one long .m4b (R2 takes up to 5 GB in a single PUT). */
+export const MAX_BOOK_BYTES = 2 * 1024 * 1024 * 1024
 
 export interface SongMeta {
   title: string
@@ -18,6 +20,10 @@ export interface SongMeta {
   isrc: string | null
   durationSec: number | null
   coverUrl: string | null
+  /** Set on audiobook chapters (uploaded from the phone): the book's name. Kept out of the music. */
+  book?: string | null
+  /** 1-based order of the chapter in its book. */
+  chapter?: number | null
 }
 
 export interface CloudSong extends SongMeta {
@@ -68,6 +74,13 @@ export function validateMeta(m: unknown): string | null {
   if (d !== null && (typeof d !== 'number' || !Number.isFinite(d) || d < 0)) {
     return 'Invalid durationSec'
   }
+  if (meta.book != null && (typeof meta.book !== 'string' || !meta.book.trim() || meta.book.length > 300)) {
+    return 'Invalid book'
+  }
+  const c = meta.chapter
+  if (c != null && (!Number.isInteger(c) || (c as number) < 1 || (c as number) > 100_000)) {
+    return 'Invalid chapter'
+  }
   return null
 }
 
@@ -81,7 +94,9 @@ export function pickMeta(m: SongMeta): SongMeta {
     deezerArtistId: m.deezerArtistId,
     isrc: m.isrc,
     durationSec: m.durationSec,
-    coverUrl: m.coverUrl
+    coverUrl: m.coverUrl,
+    // Only on audiobook chapters, so songs keep their exact shape.
+    ...(m.book ? { book: m.book.trim(), chapter: m.chapter ?? null } : {})
   }
 }
 

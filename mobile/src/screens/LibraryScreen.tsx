@@ -19,7 +19,7 @@ import { colors, fmtTime } from '../theme'
 import type { DownloadProgress } from '../useOffline'
 
 export type DownloadState = 'done' | 'downloading' | 'queued' | 'none'
-export type Section = 'songs' | 'artists' | 'playlists'
+export type Section = 'songs' | 'artists' | 'playlists' | 'books'
 
 export interface PlaylistChip {
   id: string
@@ -64,7 +64,17 @@ interface Props {
   /** The open artist; null = none. */
   artist?: string | null
   onSelectArtist?: (name: string | null) => void
-  /** Back from a playlist or an artist. */
+  /** Audiobooks (Libros); the open one; null = none. */
+  books?: ArtistGroup[]
+  book?: string | null
+  onSelectBook?: (name: string) => void
+  /** Picks audio files on the phone and uploads them as a book. */
+  onUploadBook?: () => void
+  /** What the upload is doing; null when none runs. */
+  upload?: string | null
+  /** The big ▶ button's text (an audiobook: "Continuar"). */
+  playLabel?: string
+  /** Back from a playlist, an artist or a book. */
   onBack?: () => void
 
   downloadedCount?: number
@@ -141,7 +151,7 @@ export function LibraryScreen(p: Props): React.JSX.Element {
   // Playlist cards: two per row, whatever the phone's width.
   const card = Math.floor((useWindowDimensions().width - 56) / 2)
   const list = useRef<FlatList<CloudSong>>(null)
-  const openName = p.playlistId ? 'playlist' : p.artist ? 'artist' : null
+  const openName = p.playlistId ? 'playlist' : p.artist ? 'artist' : p.book ? 'book' : null
   const section = openName ? 'songs' : (p.section ?? 'songs')
   // A–Z only for the whole library; a playlist keeps its order.
   const sorted = !openName && az
@@ -161,8 +171,8 @@ export function LibraryScreen(p: Props): React.JSX.Element {
     report?.(visible)
   }, [visible, report])
 
-  // A new playlist or artist starts with an empty search.
-  useEffect(() => setQuery(''), [p.playlistId, p.artist])
+  // A new playlist, artist or book starts with an empty search.
+  useEffect(() => setQuery(''), [p.playlistId, p.artist, p.book])
 
   const jumpTo = (letter: string): void => {
     const index = visible.findIndex((s) => letterOf(s.title) === letter)
@@ -273,7 +283,8 @@ export function LibraryScreen(p: Props): React.JSX.Element {
           [
             ['songs', 'Canciones'],
             ['artists', 'Artistas'],
-            ['playlists', 'Playlists']
+            ['playlists', 'Playlists'],
+            ['books', 'Libros']
           ] as const
         ).map(([id, label]) => (
           <Pressable
@@ -323,6 +334,66 @@ export function LibraryScreen(p: Props): React.JSX.Element {
               </Text>
               <Text style={styles.artist}>
                 {a.count === 1 ? '1 canción' : `${a.count} canciones`}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.faint} />
+          </Pressable>
+        )}
+      />
+    )
+  }
+  if (section === 'books') {
+    return (
+      <FlatList
+        testID="library"
+        key="books"
+        style={styles.list}
+        data={p.books ?? []}
+        keyExtractor={(b) => b.name}
+        refreshControl={refresh}
+        ListHeaderComponent={
+          <View style={styles.header}>
+            {libraryTop}
+            {p.upload ? (
+              <View style={styles.progressRow}>
+                <ActivityIndicator size="small" color={colors.pink} />
+                <Text testID="upload-progress" style={styles.progressText}>
+                  {p.upload}
+                </Text>
+              </View>
+            ) : (
+              p.onUploadBook &&
+              !p.offline && (
+                <Pressable style={styles.progressRow} onPress={p.onUploadBook}>
+                  <Ionicons name="cloud-upload-outline" size={20} color={colors.pinkSoft} />
+                  <Text style={styles.link}>Subir audiolibro desde el teléfono</Text>
+                </Pressable>
+              )
+            )}
+            {errorText}
+          </View>
+        }
+        ListEmptyComponent={
+          p.loading ? undefined : (
+            <Text style={styles.empty}>
+              Todavía no tienes audiolibros. Descarga los archivos en tu teléfono y súbelos aquí.
+            </Text>
+          )
+        }
+        renderItem={({ item: b }) => (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Audiolibro: ${b.name}`}
+            onPress={() => p.onSelectBook?.(b.name)}
+            style={({ pressed }) => [styles.row, pressed && styles.rowActive]}
+          >
+            <Collage covers={[b.cover]} name={b.name} size={56} />
+            <View style={styles.rowText}>
+              <Text numberOfLines={1} style={styles.songTitle}>
+                {b.name}
+              </Text>
+              <Text style={styles.artist}>
+                {b.count === 1 ? '1 capítulo' : `${b.count} capítulos`}
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.faint} />
@@ -412,12 +483,21 @@ export function LibraryScreen(p: Props): React.JSX.Element {
       <View style={styles.openInfo}>
         <Collage covers={covers} name={p.title} size={120} round={openName === 'artist'} />
         <View style={styles.rowText}>
-          <Text style={styles.kicker}>{openName === 'playlist' ? 'PLAYLIST' : 'ARTISTA'}</Text>
+          <Text style={styles.kicker}>
+            {openName === 'playlist' ? 'PLAYLIST' : openName === 'book' ? 'AUDIOLIBRO' : 'ARTISTA'}
+          </Text>
           <Text testID="title" numberOfLines={2} style={styles.openTitle}>
             {p.title}
           </Text>
           <Text testID="count" style={styles.count}>
-            {p.songs.length === 1 ? '1 canción' : `${p.songs.length} canciones`} ·{' '}
+            {openName === 'book'
+              ? p.songs.length === 1
+                ? '1 capítulo'
+                : `${p.songs.length} capítulos`
+              : p.songs.length === 1
+                ? '1 canción'
+                : `${p.songs.length} canciones`}{' '}
+            ·{' '}
             {minutes(p.songs)}
           </Text>
           {p.keepDownloaded && (
@@ -438,17 +518,19 @@ export function LibraryScreen(p: Props): React.JSX.Element {
           }
         >
           <Ionicons name="play" size={18} color="#fff" />
-          <Text style={styles.bigPlayText}>Reproducir</Text>
+          <Text style={styles.bigPlayText}>{p.playLabel ?? 'Reproducir'}</Text>
         </Pressable>
-        <Pressable
-          style={[styles.bigButton, styles.bigOutline]}
-          accessibilityLabel="Aleatorio"
-          disabled={visible.length === 0}
-          onPress={() => p.onShuffleAll(visible)}
-        >
-          <Ionicons name="shuffle" size={18} color={colors.text} />
-          <Text style={styles.bigOutlineText}>Aleatorio</Text>
-        </Pressable>
+        {openName !== 'book' && (
+          <Pressable
+            style={[styles.bigButton, styles.bigOutline]}
+            accessibilityLabel="Aleatorio"
+            disabled={visible.length === 0}
+            onPress={() => p.onShuffleAll(visible)}
+          >
+            <Ionicons name="shuffle" size={18} color={colors.text} />
+            <Text style={styles.bigOutlineText}>Aleatorio</Text>
+          </Pressable>
+        )}
       </View>
       {downloadRow}
       {errorText}

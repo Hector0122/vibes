@@ -9,7 +9,15 @@ export const mockDownloads = {
   hook: async (_url: string): Promise<void> => {},
   urls: [] as string[]
 }
+/** Uploads (PUT to a signed URL) and the system file picker. */
+export const mockUploads = { urls: [] as string[], status: 200 }
+export const mockPick = { uris: [] as string[] }
+export const UploadType = { BINARY_CONTENT: 0, MULTIPART: 1 }
+
 export function mockFsReset(): void {
+  mockUploads.urls = []
+  mockUploads.status = 200
+  mockPick.uris = []
   mockDisk.clear()
   mockDirs.clear()
   mockDownloads.size = () => 1
@@ -44,6 +52,41 @@ export class File {
   }
   get size(): number {
     return mockDisk.get(this.uri)?.length ?? 0
+  }
+  get name(): string {
+    return decodeURIComponent(this.uri.split('/').pop() ?? '')
+  }
+  open() {
+    const data = mockDisk.get(this.uri) ?? ''
+    let pos = 0
+    return {
+      readBytes: async (n: number) => {
+        const chunk = Uint8Array.from(data.slice(pos, pos + n), (c) => c.charCodeAt(0))
+        pos += chunk.length
+        return chunk
+      },
+      close: () => {}
+    }
+  }
+  createUploadTask(url: string) {
+    const size = this.size
+    let listener: ((p: { bytesSent: number; totalBytes: number }) => void) | null = null
+    return {
+      addListener: (_e: 'progress', l: typeof listener) => {
+        listener = l
+        return { remove: () => (listener = null) }
+      },
+      uploadAsync: async () => {
+        listener?.({ bytesSent: size, totalBytes: size })
+        mockUploads.urls.push(url)
+        return { status: mockUploads.status, body: '', headers: {} }
+      }
+    }
+  }
+  static async pickFileAsync(): Promise<{ canceled: boolean; result: File[] | null }> {
+    return mockPick.uris.length
+      ? { canceled: false, result: mockPick.uris.map((u) => new File(u)) }
+      : { canceled: true, result: null }
   }
   async text(): Promise<string> {
     const v = mockDisk.get(this.uri)

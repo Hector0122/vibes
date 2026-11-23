@@ -17,6 +17,7 @@ import {
 } from 'expo-audio'
 import type { CloudSong } from '../../src/shared/api'
 import { isListened, pickNext, pickPrev, remember } from '../../src/shared/queue'
+import { chaptersOf } from './books'
 import type { Cloud } from './cloud'
 import * as store from './offline'
 import { recordPlay, setPlaysCloud } from './plays'
@@ -55,6 +56,8 @@ export class Engine {
   private pl: AudioPlaylist | null = null
   private cloud: Cloud | null = null
   private queue: CloudSong[] = []
+  /** The audiobook playing, in order: it keeps going whatever list the screen shows. */
+  private chapters: CloudSong[] = []
   /** Mirrors the native playlist, in order. */
   private items: Item[] = []
   private currentToken = 0
@@ -135,8 +138,25 @@ export class Engine {
     return { uri: await this.cloud.streamUrl(song.id), streamed: true }
   }
 
+  /** What next/previous walk through: the book's chapters while one plays, else the list. */
+  private list(): CloudSong[] {
+    return this.state.current?.book ? this.chapters : this.queue
+  }
+
   private find(id: string | null): CloudSong | undefined {
-    return id ? this.queue.find((s) => s.id === id) : undefined
+    return id ? this.list().find((s) => s.id === id) : undefined
+  }
+
+  /** Chapters play in order (no shuffle) and the book stops at its end. */
+  private pick(cur: CloudSong | null): ReturnType<typeof pickNext> {
+    const book = !!cur?.book
+    const n = pickNext(
+      this.list().map((s) => s.id),
+      cur?.id ?? null,
+      this.state.shuffle && !book,
+      this.bag
+    )
+    return book && n.wrapped ? { ...n, id: null } : n
   }
 
   private item(song: CloudSong, streamed: boolean): Item {
@@ -188,12 +208,7 @@ export class Engine {
     let pos = this.currentPos()
     // Nothing queued after: pick and add the next one.
     if (pos === this.items.length - 1) {
-      const n = pickNext(
-        this.queue.map((s) => s.id),
-        cur.id,
-        this.state.shuffle,
-        this.bag
-      )
+      const n = this.pick(cur)
       const song = this.find(n.id)
       if (song) {
         try {
@@ -211,7 +226,7 @@ export class Engine {
     // Nothing before: the last song that played, so ⏮ on the lock screen works.
     if (pos === 0 && this.history.length) {
       const p = pickPrev(
-        this.queue.map((s) => s.id),
+        this.list().map((s) => s.id),
         cur.id,
         this.history
       )
@@ -276,7 +291,8 @@ export class Engine {
       this.set({ sleep: null })
     }
     const cur = this.state.current
-    if (cur && this.countedToken !== this.currentToken && isListened(s.currentTime, s.duration)) {
+    // Chapters aren't plays: they'd fill "most played" and the recommendations.
+    if (cur && !cur.book && this.countedToken !== this.currentToken && isListened(s.currentTime, s.duration)) {
       this.countedToken = this.currentToken
       void recordPlay(cur.id, this.now()).catch(() => {})
     }
@@ -306,18 +322,29 @@ export class Engine {
     this.items = []
     this.needsLoad = true // ▶ loads it again if we stop here
     this.resumeAt = 0
-    if (++this.failures < this.queue.length) this.next()
+    if (++this.failures < this.list().length) this.next()
     else this.set({ error: 'No se pudo reproducir esta canción', playing: false })
   }
 
   /** Plays a song from the current list. */
   async play(id: string): Promise<void> {
-    const song = this.find(id)
+    const song = this.queue.find((s) => s.id === id)
+    if (song) await this.start(song)
+  }
+
+  /** Plays a chapter of a book (`chapters` in order), from `from` seconds. */
+  async playBook(chapters: CloudSong[], id: string, from = 0): Promise<void> {
+    const song = chapters.find((s) => s.id === id)
     if (!song) return
+    this.chapters = chapters
+    await this.start(song, from)
+  }
+
+  private async start(song: CloudSong, from = 0): Promise<void> {
     const cur = this.state.current
-    if (cur && cur.id !== id) this.history = remember(this.history, cur.id)
-    this.bag = this.bag.filter((x) => x !== id)
-    await this.load(song)
+    if (cur && cur.id !== song.id) this.history = remember(this.history, cur.id)
+    this.bag = this.bag.filter((x) => x !== song.id)
+    await this.load(song, from)
   }
 
   toggle = (): void => {
@@ -360,12 +387,7 @@ export class Engine {
       return
     }
     const cur = this.state.current
-    const n = pickNext(
-      this.queue.map((s) => s.id),
-      cur?.id ?? null,
-      this.state.shuffle,
-      this.bag
-    )
+    const n = this.pick(cur)
     this.bag = n.bag
     const song = this.find(n.id)
     if (!song) return
@@ -392,7 +414,7 @@ export class Engine {
       return
     }
     const p = pickPrev(
-      this.queue.map((s) => s.id),
+      this.list().map((s) => s.id),
       this.state.current?.id ?? null,
       this.history
     )
@@ -440,6 +462,7 @@ export class Engine {
     this.pl = null
     this.items = []
     this.queue = []
+    this.chapters = []
     this.bag = []
     this.history = []
     this.currentToken = 0
@@ -475,6 +498,7 @@ export class Engine {
         savedAt: t
       })
       .catch(() => {})
+    if (cur.book) void store.saveBookPosition(cur.book, cur.id, this.state.time).catch(() => {})
   }
 
   /**
@@ -491,6 +515,7 @@ export class Engine {
     const queue = s.queueIds.map((id) => byId.get(id)).filter((x): x is CloudSong => !!x)
     if (this.queue.length === 0) this.queue = queue.length ? queue : songs
     const current = byId.get(s.current.id) ?? s.current
+    if (current.book) this.chapters = chaptersOf(songs, current.book)
     this.needsLoad = true
     this.resumeAt = s.time
     this.set({

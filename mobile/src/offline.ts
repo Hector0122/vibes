@@ -4,6 +4,7 @@
 //   vibes/songs/{id}.m4a   downloaded audio
 //   vibes/downloads.json   { id: sha256 } of each downloaded copy
 //   vibes/library.json     the last song list + playlists seen in the cloud
+//   vibes/books.json       where each audiobook was left
 import { Directory, File, Paths } from 'expo-file-system'
 import type { CloudPlaylist, CloudSong } from '../../src/shared/api'
 
@@ -129,3 +130,16 @@ export async function loadPrefs(): Promise<Prefs> {
 }
 
 export const savePrefs = (p: Prefs): Promise<void> => writeJson(prefsFile(), p)
+
+/** Where each audiobook was left: book name → chapter (song id) and second. */
+export type BookPositions = Record<string, { id: string; time: number }>
+
+const booksFile = (): File => new File(root(), 'books.json')
+
+export async function loadBookPositions(): Promise<BookPositions> {
+  return (await readJson<BookPositions>(booksFile())) ?? {}
+}
+
+export async function saveBookPosition(book: string, id: string, time: number): Promise<void> {
+  await writeJson(booksFile(), { ...(await loadBookPositions()), [book]: { id, time } })
+}

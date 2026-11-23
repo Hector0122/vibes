@@ -6,6 +6,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-
 import { Alert, Linking } from 'react-native'
 import App from '../../App'
 import { engine } from '../engine'
+import { Sha256 } from '../sha256'
 import { applyPlaylistOp, type CloudSong, type PlaylistOp } from '../../../src/shared/api'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const audio = require('expo-audio') as typeof import('../../__mocks__/expo-audio')
@@ -59,6 +60,9 @@ type Req = {
   createdAt: number
 }
 let REQUESTS: Req[] = []
+/** Begun uploads (their request) and the songs committed after them (audiobook chapters). */
+let BEGUN = new Map<string, { meta: CloudSong; size: number; sha256: string }>()
+let UPLOADED: CloudSong[] = []
 function fakeWorker(): void {
   globalThis.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
@@ -86,7 +90,18 @@ function fakeWorker(): void {
       ({ ok: status < 400, status, json: async () => body }) as Response
     if (auth !== `Bearer ${TOKEN}`) return json({ error: 'Unauthorized' }, 401)
     if (url.endsWith('/v1/health')) return json({ ok: true })
-    if (url.endsWith('/v1/songs')) return json({ songs: [...SONGS] })
+    if (url.endsWith('/v1/songs')) return json({ songs: [...SONGS, ...UPLOADED] })
+    const up = /\/v1\/songs\/([^/]+)\/(upload|commit)$/.exec(url)
+    if (up && up[2] === 'upload') {
+      BEGUN.set(up[1], JSON.parse(String(init?.body)))
+      return json({ url: `https://r2.test/PUT/${up[1]}`, expiresAt: 0 })
+    }
+    if (up) {
+      const b = BEGUN.get(up[1])!
+      const s = { ...b.meta, id: up[1], size: b.size, sha256: b.sha256, updatedAt: 1 }
+      UPLOADED.push(s)
+      return json(s)
+    }
     if (url.endsWith('/v1/playlists/ops') && init?.method === 'POST') {
       const { ops } = JSON.parse(String(init.body)) as { ops: PlaylistOp[] }
       OPS.push(...ops)
@@ -161,6 +176,8 @@ beforeEach(() => {
   requests.length = 0
   PLAYLISTS = []
   REQUESTS = []
+  BEGUN = new Map()
+  UPLOADED = []
   OPS = []
   online = true
   fakeWorker()
@@ -355,6 +372,50 @@ describe('with the cloud set up', () => {
 
     await fireEvent.press(screen.getByLabelText('Volver'))
     expect(await screen.findByTestId('song-bbbbbbbbbbb')).toBeTruthy()
+  })
+
+  it('audiobooks: upload from the phone, kept out of the music, chapters in order, Continuar where it was left', async () => {
+    fs.mockDisk.set('content://dl/Dune%20-%2002.mp3', 'segundo')
+    fs.mockDisk.set('content://dl/Dune%20-%2001.mp3', 'primero')
+    fs.mockPick.uris = ['content://dl/Dune%20-%2002.mp3', 'content://dl/Dune%20-%2001.mp3']
+    await renderLibrary()
+    await fireEvent.press(await screen.findByText('Libros'))
+    await fireEvent.press(await screen.findByText('Subir audiolibro desde el teléfono'))
+    expect(await screen.findByDisplayValue('Dune')).toBeTruthy() // name guessed from the files
+    await fireEvent.press(screen.getByText('Guardar'))
+    await fireEvent.press(await screen.findByLabelText('Audiolibro: Dune'))
+
+    // Uploaded in file order, as chapters 1 and 2 of "Dune", each straight to storage.
+    expect(UPLOADED.map((c) => [c.title, c.book, c.chapter])).toEqual([
+      ['Dune - 01', 'Dune', 1],
+      ['Dune - 02', 'Dune', 2]
+    ])
+    expect(fs.mockUploads.urls).toEqual(UPLOADED.map((c) => `https://r2.test/PUT/${c.id}`))
+    expect(BEGUN.get(UPLOADED[0].id)!.sha256).toBe(new Sha256().update(Uint8Array.from('primero', (c) => c.charCodeAt(0))).digest())
+    expect(screen.getByText('AUDIOLIBRO')).toBeTruthy()
+
+    // Chapters play in order even with shuffle on, and the book stops at its end.
+    engine.setShuffle(true)
+    await fireEvent.press(screen.getByText('Reproducir'))
+    await waitFor(() => expect(nowPlaying()).toBe('Dune - 01'))
+    await act(() => audio.mockPlaylistFinish())
+    await waitFor(() => expect(nowPlaying()).toBe('Dune - 02'))
+    expect(audio.mockPlaylist.uris).toHaveLength(2) // nothing after the last chapter
+    await act(() => audio.mockPlaylistStatus({ currentTime: 95 }))
+    await fireEvent.press(screen.getByLabelText('Pausar'))
+
+    // Back later: "Continuar" picks up in chapter 2 at 1:35.
+    await fireEvent.press(screen.getByLabelText('Volver'))
+    await fireEvent.press(screen.getByLabelText('Audiolibro: Dune'))
+    await fireEvent.press(await screen.findByText('Continuar'))
+    await waitFor(() => expect(audio.mockPlaylist.seekTo).toHaveBeenLastCalledWith(95))
+    expect(nowPlaying()).toBe('Dune - 02')
+
+    // The music doesn't show the chapters.
+    await fireEvent.press(screen.getByLabelText('Volver'))
+    await fireEvent.press(screen.getByText('Canciones'))
+    expect(screen.getByTestId('count')).toHaveTextContent('3 canciones en tu nube')
+    expect(screen.queryByTestId(`song-${UPLOADED[0].id}`)).toBeNull()
   })
 
   it('Inicio: tap an artist and only their songs show; Biblioteca sorts A–Z with letters', async () => {
