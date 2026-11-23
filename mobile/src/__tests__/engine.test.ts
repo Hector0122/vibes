@@ -142,3 +142,42 @@ it('keeps going song after song on its own (shuffle, screen off)', async () => {
   expect(audio.mockPlaylist.played).toHaveLength(7)
   expect(e.state.current?.id).toBe(audio.mockPlaylist.uris[audio.mockPlaylist.currentIndex].match(/songs\/(\w+)\./)![1])
 })
+
+it('the next song could not be queued (no link at the time): it is picked when the song ends', async () => {
+  fs.mockDisk.delete(`file:///docs/vibes/songs/${B.id}.m4a`) // not downloaded, and no cloud yet
+  await e.play(A.id)
+  await flush()
+  expect(audio.mockPlaylist.uris).toHaveLength(1) // nothing after A
+  fs.mockDisk.set(`file:///docs/vibes/songs/${B.id}.m4a`, 'x') // reachable again
+  audio.mockPlaylistFinish()
+  await flush()
+  expect(e.state.current?.id).toBe(B.id)
+  expect(audio.mockPlaylist.played.at(-1)).toContain(B.id)
+})
+
+it('a song that fails to load is skipped with a fresh player (Android stays stuck after an error)', async () => {
+  await e.play(A.id)
+  await flush()
+  audio.mockPlaylistFinish() // on to B
+  await flush()
+  const created = (audio.createAudioPlaylist as jest.Mock).mock.calls.length
+  audio.mockPlaylistStatus({ error: { message: 'Source error' } })
+  await flush()
+  expect(audio.createAudioPlaylist).toHaveBeenCalledTimes(created + 1)
+  expect(e.state.current?.id).toBe(C.id)
+  expect(audio.mockPlaylist.played.at(-1)).toContain(C.id)
+})
+
+it('gives up after one lap of broken songs, and ▶ tries again', async () => {
+  await e.play(A.id)
+  await flush()
+  for (let i = 0; i < 3; i++) {
+    audio.mockPlaylistStatus({ error: { message: 'Source error' } })
+    await flush()
+  }
+  expect(e.state.error).toBe('No se pudo reproducir esta canción')
+  const loads = audio.mockPlaylist.clear.mock.calls.length
+  e.toggle()
+  await flush()
+  expect(audio.mockPlaylist.clear.mock.calls.length).toBe(loads + 1)
+})

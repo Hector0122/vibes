@@ -144,7 +144,11 @@ export const mockPlaylist = {
   }),
   setActiveForLockScreen: jest.fn(),
   updateLockScreenMetadata: jest.fn(),
-  destroy: jest.fn(),
+  // A released player stops reporting (a new one gets its own listeners).
+  destroy: jest.fn(() => {
+    plListeners.playlistStatusUpdate.clear()
+    plListeners.trackChanged.clear()
+  }),
   addListener: jest.fn((event: string, l: PlListener) => {
     plListeners[event]?.add(l)
     return { remove: () => plListeners[event]?.delete(l) }
@@ -155,14 +159,21 @@ export const mockPlaylist = {
 export function mockPlaylistFinish(): void {
   if (mockPlaylist.currentIndex >= mockPlaylist.uris.length - 1) {
     plEmit({ playing: false, didJustFinish: true })
+    plStatus = { ...plStatus, didJustFinish: false } // Android sends it with that one update only
     return
   }
   const prev = mockPlaylist.currentIndex++
   plTrackChanged(prev)
 }
 
-export function mockPlaylistStatus(patch: Partial<PlStatus>): void {
-  plEmit(patch)
+/** `error` comes once, with that update only (like Android's onPlayerError). */
+export function mockPlaylistStatus(patch: Partial<PlStatus> & { error?: { message: string } }): void {
+  const { error, ...rest } = patch
+  if (!error) return plEmit(rest)
+  plStatus = { ...plStatus, ...rest }
+  plListeners.playlistStatusUpdate.forEach((l) =>
+    l({ ...plStatus, currentIndex: mockPlaylist.currentIndex, error })
+  )
 }
 
 export function mockPlaylistReset(): void {

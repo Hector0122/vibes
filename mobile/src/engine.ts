@@ -70,6 +70,8 @@ export class Engine {
   private lastSave = 0
   /** The token of the last song whose play was counted (once per time it plays). */
   private countedToken = 0
+  /** Songs in a row that failed to play. */
+  private failures = 0
   private listeners = new Set<() => void>()
   state: PlayerState = {
     current: null,
@@ -285,6 +287,27 @@ export class Engine {
       error: s.error?.message ? 'No se pudo reproducir esta canción' : this.state.error
     })
     this.save()
+    if (s.playing && s.isLoaded) this.failures = 0 // `playing` alone is also true while buffering
+    if (s.error?.message) return this.skipBroken()
+    // The list ran out: nothing got queued after this song (its link failed, say). Pick one now.
+    // duration > 0 leaves out the "ended" that clearing the list for a new song also reports.
+    if (s.didJustFinish && s.duration > 0) {
+      if (this.state.sleep && 'endOfSong' in this.state.sleep) this.set({ sleep: null })
+      else this.next()
+    }
+  }
+
+  /** A song that can't play is skipped, but never more than one lap around the list. */
+  private skipBroken(): void {
+    // After an error ExoPlayer stays stopped until prepared again, which expo-audio only does
+    // when it creates the player: start over with a new one.
+    this.pl?.destroy()
+    this.pl = null
+    this.items = []
+    this.needsLoad = true // ▶ loads it again if we stop here
+    this.resumeAt = 0
+    if (++this.failures < this.queue.length) this.next()
+    else this.set({ error: 'No se pudo reproducir esta canción', playing: false })
   }
 
   /** Plays a song from the current list. */
