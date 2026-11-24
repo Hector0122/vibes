@@ -31,6 +31,8 @@ const api: VibesAPI = {
   saveCloudSettings: (input) => ipcRenderer.invoke('cloud:save-settings', input),
   testCloud: (input) => ipcRenderer.invoke('cloud:test', input),
   onSongUpdated: (cb) => on('song-updated', cb),
+  deleteSongs: (ids) => ipcRenderer.invoke('songs:delete', ids),
+  onSongsRemoved: (cb) => on('songs-removed', cb),
   onPlaylistsChanged: (cb) => on('playlists-changed', () => cb()),
   onProgress: (cb) => on('progress', cb)
 }

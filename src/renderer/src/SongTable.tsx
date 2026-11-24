@@ -8,7 +8,8 @@ import {
   Equalizer,
   MusicIcon,
   PlayIcon,
-  PlusIcon
+  PlusIcon,
+  TrashIcon
 } from './icons'
 
 /** Drag payload: a library song id. */
@@ -29,6 +30,8 @@ interface Props {
   onMove?: (from: number, to: number) => void
   /** "×" on each row (a playlist). */
   onRemove?: (songId: string) => void
+  /** Trash on each row: deletes the song everywhere (asks first). */
+  onDelete?: (song: LocalSong) => void
 }
 
 /** The song list: number/equalizer, cover + title, album, length, status, actions. Rows drag onto playlists. */
@@ -48,6 +51,7 @@ export function SongTable(p: Props): React.JSX.Element {
         </span>
         <span className="w-8" />
         <span className="w-8" />
+        {p.onDelete && <span className="w-8" />}
       </div>
       <ul className="mt-1">
         {p.songs.map((s, i) => {
@@ -168,6 +172,18 @@ export function SongTable(p: Props): React.JSX.Element {
                   )
                 )}
               </span>
+              {p.onDelete && (
+                <span className="flex w-8 justify-center">
+                  <button
+                    className="icon p-1 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-red-400"
+                    aria-label={`Eliminar ${s.title}`}
+                    title="Eliminar"
+                    onClick={() => p.onDelete!(s)}
+                  >
+                    <TrashIcon className="h-4 w-4" />
+                  </button>
+                </span>
+              )}
             </li>
           )
         })}

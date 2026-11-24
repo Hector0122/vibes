@@ -136,6 +136,7 @@ export const RadioIcon = icon(
   </>
 )
 export const CloseIcon = icon(<path d="M6 6l12 12M18 6L6 18" />)
+export const TrashIcon = icon(<path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 12.5h9l1-12.5M10 11v5M14 11v5" />)
 
 /** Three bouncing bars: "this song is playing". */
 export function Equalizer({ active }: { active: boolean }): React.JSX.Element {

@@ -1,3 +1,4 @@
+import type { Lang } from './lang'
 import type { SongMeta } from './api'
 
 /** A song in the desktop library. id = YouTube video id. */
@@ -55,6 +56,8 @@ export interface SongRef {
   album: string | null
   durationSec: number | null
   coverUrl: string | null
+  /** Library songs: their language, when known. */
+  lang?: Lang | null
 }
 
 export interface Playlist {
@@ -129,6 +132,10 @@ export interface VibesAPI {
   saveCloudSettings(input: CloudSettingsInput): Promise<CloudSettingsView>
   testCloud(input: CloudSettingsInput): Promise<CloudTestResult>
   onSongUpdated(cb: (song: LocalSong) => void): () => void
+  /** Deletes songs: here, in the cloud and from the playlists. */
+  deleteSongs(ids: string[]): Promise<string[]>
+  /** Songs deleted (here or on the phone). */
+  onSongsRemoved(cb: (ids: string[]) => void): () => void
   /** Playlists changed outside the window (edits from the phone). */
   onPlaylistsChanged(cb: () => void): () => void
   onProgress(cb: (p: TaskProgress) => void): () => void

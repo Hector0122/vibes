@@ -7,7 +7,7 @@
 //   ahora" with synced lyrics → preview a recommendation without adding it →
 //   radio when the list ends → playlists (create, + menu, drag & drop, reorder,
 //   remove) → shuffle → upload without cloud settings shows the error →
-//   restart keeps the library, playlists and switches.
+//   delete a song → restart keeps the library, playlists and switches.
 // Deezer, LRCLIB, the cover image and YouTube's audio stream are a local fake server.
 // Run with: pnpm test:e2e   (needs a display; CI wraps it in xvfb-run)
 // VIBES_APP_BIN=dist/linux-unpacked/vibes runs the same flow on the packaged app.
@@ -352,6 +352,19 @@ async function run(): Promise<void> {
     await app.eval(click('Subir a la nube'))
     await waitFor(app, `${status}.includes('Configura la nube')`, 'cloud error')
     console.log('✓ upload without cloud:', await app.eval<string>(status))
+
+    // 7b. Delete a song: asks first ("Cancelar" keeps it), then it's gone, also after a restart.
+    const titles = `[...document.querySelectorAll('[data-testid=song]')].filter((b) => b.offsetParent).map((b) => b.querySelector('.truncate').textContent)`
+    const victim = (await app.eval<string[]>(titles)).find((t) => t !== 'Feel Good Inc.')!
+    const trash = `document.querySelector(${JSON.stringify(`[aria-label="Eliminar ${victim}"]`)}).click()`
+    await app.eval(`window.confirm = () => false`)
+    await app.eval(trash)
+    await sleep(500)
+    assert.ok((await app.eval<string[]>(titles)).includes(victim), 'Cancelar keeps the song')
+    await app.eval(`window.confirm = () => true`)
+    await app.eval(trash)
+    await waitFor(app, `!(${titles}).includes(${JSON.stringify(victim)}) && (${titles}).length === 3`, 'song deleted')
+    console.log('✓ delete a song:', victim)
   } finally {
     await stop(app)
   }
@@ -360,7 +373,7 @@ async function run(): Promise<void> {
   await sleep(500)
   app = await launch()
   try {
-    await waitFor(app, `document.querySelectorAll('[data-testid=song]').length === 4`, 'library after restart')
+    await waitFor(app, `document.querySelectorAll('[data-testid=song]').length === 3`, 'library after restart (one deleted)')
     assert.ok(!(await app.eval<boolean>(`document.body.innerText.includes('Importar de eSound')`)), 'import stays hidden after restart')
     const list = await app.eval<Row[]>(rows)
     assert.ok(list.every((r) => r.enabled))

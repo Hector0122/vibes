@@ -69,6 +69,13 @@ export class Library {
     return next
   }
 
+  /** Forgets a song (deleted). */
+  async remove(id: string): Promise<boolean> {
+    if (!this.songs.delete(id)) return false
+    await this.save()
+    return true
+  }
+
   private save(): Promise<void> {
     const data = JSON.stringify({ songs: [...this.songs.values()] })
     this.writing = this.writing

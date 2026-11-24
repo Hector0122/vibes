@@ -1,6 +1,6 @@
 // End-to-end through the jobs: eSound fixture → library + audio files →
 // the real Worker app (real migration SQL on SQLite, in-memory R2).
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -12,6 +12,9 @@ import { CloudClient } from '../cloud/client'
 import { Library } from '../library'
 import {
   addFromSearch,
+  applyCloudDeletions,
+  deleteSongs,
+  detectLanguages,
   downloadMissing,
   enrichYoutubeSongs,
   importEsound,
@@ -248,5 +251,80 @@ describe('recordPlay', () => {
   it('a preview of a song not in the library is ignored', async () => {
     await expect(recordPlay(ctx, 'zzzzzzzzzzz')).resolves.toBeUndefined()
     expect(ctx.library.list()).toHaveLength(0)
+  })
+})
+
+describe('detectLanguages', () => {
+  it("from the lyrics, else the artist's other songs; up to the cloud without sending the audio again", async () => {
+    const c = cloud()
+    const hit = (await searchYoutube(ctx.tools, 'gorillaz')).find((r) => r.id === SEARCH_HIT_ID)!
+    await addFromSearch(ctx, hit, c.client)
+    await ctx.library.merge([
+      { id: 'other000000', title: 'On Melancholy Hill', artists: 'Gorillaz', album: null, deezerId: null, deezerArtistId: null,
+        isrc: null, durationSec: 233, coverUrl: null, saved: true, playCount: 0 }
+    ])
+    const put = vi.spyOn(c.client, 'putFile')
+    let offline = true
+    const lyrics = vi.fn(async (s: { id: string }) => {
+      if (s.id === SEARCH_HIT_ID) return "Windmill, windmill for the land, it's all for you and me"
+      if (offline) throw new Error('sin internet')
+      return null // no lyrics for this one
+    })
+
+    // Offline for the second song: it stays unchecked, the first goes up as English.
+    expect(await detectLanguages(ctx, lyrics, c.client)).toBe(1)
+    expect(ctx.library.get(SEARCH_HIT_ID)?.lang).toBe('en')
+    expect(ctx.library.get('other000000')?.lang).toBeUndefined()
+    expect((await c.list()).songs.map((s) => [s.id, s.lang])).toEqual([[SEARCH_HIT_ID, 'en']])
+    expect(put).not.toHaveBeenCalled()
+
+    // Back online: no lyrics, so it takes its artist's language. Nothing new to send.
+    offline = false
+    expect(await detectLanguages(ctx, lyrics, c.client)).toBe(0) // no audio here: not in the cloud
+    expect(ctx.library.get('other000000')?.lang).toBe('en')
+    // Lyrics are asked once per song.
+    await detectLanguages(ctx, lyrics, c.client)
+    expect(lyrics.mock.calls.filter(([s]) => s.id === SEARCH_HIT_ID)).toHaveLength(1)
+  })
+})
+
+describe('deleting songs', () => {
+  it('here: the entry, its audio file and the cloud copy', async () => {
+    const c = cloud()
+    const hit = (await searchYoutube(ctx.tools, 'gorillaz')).find((r) => r.id === SEARCH_HIT_ID)!
+    await addFromSearch(ctx, hit, c.client)
+    const file = join(ctx.audioDir, `${SEARCH_HIT_ID}.m4a`)
+    expect(existsSync(file)).toBe(true)
+
+    expect(await deleteSongs(ctx, [SEARCH_HIT_ID, 'notthere000'], c.client)).toEqual([SEARCH_HIT_ID])
+    expect(ctx.library.get(SEARCH_HIT_ID)).toBeUndefined()
+    expect(existsSync(file)).toBe(false)
+    expect((await c.list()).songs).toEqual([])
+    expect(c.r2.objects.size).toBe(0)
+    const onDisk = new Library(join(root, 'library.json'))
+    await onDisk.load()
+    expect(onDisk.get(SEARCH_HIT_ID)).toBeUndefined()
+  })
+
+  it('a failed download (no audio, not in the cloud) goes too', async () => {
+    const c = cloud()
+    await ctx.library.merge([
+      { id: 'dz538646262', title: 'Maggie May', artists: 'Rod Stewart', album: null, deezerId: null, deezerArtistId: null,
+        isrc: null, durationSec: 350, coverUrl: null, saved: true, playCount: 0 }
+    ])
+    expect(await deleteSongs(ctx, ['dz538646262'], c.client)).toEqual(['dz538646262'])
+    expect(ctx.library.list()).toEqual([])
+  })
+
+  it('on the phone: removed here on the next check, and cleared in the cloud', async () => {
+    const c = cloud()
+    const hit = (await searchYoutube(ctx.tools, 'gorillaz')).find((r) => r.id === SEARCH_HIT_ID)!
+    await addFromSearch(ctx, hit, c.client)
+    await c.client.deleteSong(SEARCH_HIT_ID) // what the phone does
+    expect(await applyCloudDeletions(ctx, c.client)).toEqual([SEARCH_HIT_ID])
+    expect(ctx.library.get(SEARCH_HIT_ID)).toBeUndefined()
+    expect(existsSync(join(ctx.audioDir, `${SEARCH_HIT_ID}.m4a`))).toBe(false)
+    expect((await c.client.listDeletions()).deletions).toEqual([])
+    expect(await applyCloudDeletions(ctx, c.client)).toEqual([])
   })
 })

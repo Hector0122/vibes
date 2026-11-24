@@ -6,6 +6,8 @@
 // and the current song is never picked again right away. "Previous" walks back
 // through what actually played (the history), not up the list.
 
+import type { Lang } from './lang'
+
 export type Rand = () => number
 
 export interface Next {
@@ -21,9 +23,16 @@ export function pickNext(
   current: string | null,
   shuffle: boolean,
   bag: string[],
-  rand: Rand = Math.random
+  rand: Rand = Math.random,
+  /** Each song's language: in shuffle, a Spanish song is followed by Spanish ones (same for English). */
+  langOf?: (id: string) => Lang | null | undefined
 ): Next {
   if (queue.length === 0) return { id: null, bag: [], wrapped: false }
+  const lang = shuffle && current && langOf ? langOf(current) : null
+  if (lang) {
+    const same = queue.filter((id) => id === current || langOf!(id) === lang)
+    if (same.length > 1) queue = same // nothing else in that language: the whole list
+  }
   if (!shuffle) {
     const i = current ? queue.indexOf(current) : -1
     return { id: queue[(i + 1) % queue.length], bag, wrapped: i === queue.length - 1 }

@@ -181,3 +181,20 @@ it('gives up after one lap of broken songs, and ▶ tries again', async () => {
   await flush()
   expect(audio.mockPlaylist.clear.mock.calls.length).toBe(loads + 1)
 })
+
+it("shuffle doesn't mix languages: from a Spanish song only Spanish ones play next", async () => {
+  const es = 'defg'.split('').map((c) => ({ ...song(c.repeat(11), `es ${c}`), lang: 'es' as const }))
+  const en = 'hijk'.split('').map((c) => ({ ...song(c.repeat(11), `en ${c}`), lang: 'en' as const }))
+  for (const s of [...es, ...en]) fs.mockDisk.set(`file:///docs/vibes/songs/${s.id}.m4a`, 'x')
+  e.setQueue([...en, ...es])
+  e.setShuffle(true)
+  await e.play(es[0].id)
+  await flush()
+  for (let i = 0; i < 6; i++) {
+    audio.mockPlaylistFinish()
+    await flush()
+  }
+  const played = audio.mockPlaylist.played.map((u: string) => u.match(/songs\/(\w+)\./)![1])
+  expect(played).toHaveLength(7)
+  expect(played.every((id: string) => es.some((s) => s.id === id))).toBe(true)
+})

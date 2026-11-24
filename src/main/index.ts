@@ -19,6 +19,9 @@ import { lookupDeezer } from './metadata'
 import { Playlists } from './playlists'
 import {
   addFromSearch,
+  applyCloudDeletions,
+  deleteSongs,
+  detectLanguages,
   downloadMissing,
   enrichYoutubeSongs,
   importEsound,
@@ -27,6 +30,7 @@ import {
   type TaskContext
 } from './tasks'
 import { findOnYoutube, radioFor, recommend, searchYoutube, streamResolver } from './youtube'
+import { keepLang } from '../shared/lang'
 
 // Tests point these at fixtures; normal runs use the real locations.
 if (process.env.VIBES_USER_DATA) app.setPath('userData', process.env.VIBES_USER_DATA)
@@ -40,7 +44,7 @@ const REQUESTS_EVERY_MS = 2 * 60_000
 /** And how often to refresh the phone's "Recomendado para ti" (also whenever Home loads them). */
 const RECOMMEND_EVERY_MS = 6 * 60 * 60_000
 
-function send(channel: string, payload: LocalSong | TaskProgress | null): void {
+function send(channel: string, payload: LocalSong | TaskProgress | string[] | null): void {
   win?.webContents.send(channel, payload)
 }
 
@@ -101,7 +105,12 @@ async function main(): Promise<void> {
     if (file) return `http://127.0.0.1:${port}/${file}`
     return YOUTUBE_ID_RE.test(String(id)) ? stream(String(id)).catch(() => '') : ''
   })
-  ipcMain.handle('youtube:radio', (_e, id: string) => radioFor(ctx.tools, String(id), library.list()))
+  ipcMain.handle('youtube:radio', async (_e, id: string) => {
+    const tracks = await radioFor(ctx.tools, String(id), library.list())
+    // Radio from a Spanish song stays in Spanish (same for English).
+    const want = library.get(String(id))?.lang
+    return want ? keepLang(tracks, library.list(), want) : tracks
+  })
   ipcMain.handle('esound:import', single(() => importEsound(ctx, esoundDir())))
   ipcMain.handle('songs:download-missing', single(() => downloadMissing(ctx)))
   ipcMain.handle(
@@ -173,19 +182,44 @@ async function main(): Promise<void> {
     return job
   }
   ipcMain.handle('songs:add', (_e, result: SearchResult) => add(result))
+  /** After songs are deleted: out of the playlists (and the cloud's copy), and the window is told. */
+  const forget = async (ids: string[]): Promise<string[]> => {
+    if (!ids.length) return ids
+    for (const p of playlists.list()) {
+      for (const id of ids) if (p.songIds.includes(id)) await playlists.removeSong(p.id, id)
+    }
+    playlistSync.schedule()
+    send('playlists-changed', null)
+    send('songs-removed', ids)
+    return ids
+  }
+  ipcMain.handle('songs:delete', async (_e, ids: unknown) => {
+    const list = (Array.isArray(ids) ? ids : []).map(String).filter((id) => library.get(id))
+    const active = await settings.active()
+    const client = active ? new CloudClient({ baseUrl: active.url, token: active.token }) : null
+    return forget(await deleteSongs(ctx, list, client))
+  })
 
   // Songs marked on the phone (downloaded here while the app is open), and its plays.
+  const lyricsText = (s: SongRef): Promise<string | null> =>
+    cachedLyrics(join(userData, 'lyrics'), s, (x) => fetchLyrics(x)).then((l) => l?.plain ?? null)
   const checkRequests = single(async () => {
     const active = await settings.active()
-    if (!active) return
-    const client = new CloudClient({ baseUrl: active.url, token: active.token, retries: 1 })
-    const run = await processRequests(client, (r) => addRequested(r, add, (want) => findOnYoutube(ctx.tools, want)))
-    if (run.done || run.failed) console.log(`Canciones del celular: ${run.done} agregadas, ${run.failed} con error`)
-    // Playlist edits from the phone: in, then our set goes back up.
-    if (await pullPhoneEdits(client)) playlistSync.schedule()
-    // And what was listened to on the phone counts here too (for the recommendations).
-    const plays = await importPhonePlays(client, (id, at) => recordPlay(ctx, id, at))
-    if (plays) console.log(`Reproducciones del celular: ${plays}`)
+    const client = active ? new CloudClient({ baseUrl: active.url, token: active.token, retries: 1 }) : null
+    if (client) {
+      const run = await processRequests(client, (r) => addRequested(r, add, (want) => findOnYoutube(ctx.tools, want)))
+      if (run.done || run.failed) console.log(`Canciones del celular: ${run.done} agregadas, ${run.failed} con error`)
+      // Playlist edits from the phone: in, then our set goes back up.
+      if (await pullPhoneEdits(client)) playlistSync.schedule()
+      // And what was listened to on the phone counts here too (for the recommendations).
+      const plays = await importPhonePlays(client, (id, at) => recordPlay(ctx, id, at))
+      if (plays) console.log(`Reproducciones del celular: ${plays}`)
+      // Songs deleted on the phone go here too.
+      await forget(await applyCloudDeletions(ctx, client))
+    }
+    // The language of new songs (shuffle doesn't mix them), up to the phone too.
+    const langs = await detectLanguages(ctx, lyricsText, client)
+    if (langs) console.log(`Idioma actualizado en la nube: ${langs} canciones`)
   })
   const checkRequestsQuietly = (): void => void checkRequests().catch(() => {}) // offline: next time
   setInterval(checkRequestsQuietly, REQUESTS_EVERY_MS)

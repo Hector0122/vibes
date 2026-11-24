@@ -105,7 +105,8 @@ export function Player({
 
   /** `auto`: the song ended by itself (not a click), so the radio may take over at the end of the list. */
   function next(auto = false): void {
-    const n = pickNext(ids, song?.id ?? null, shuffle, bag.current ?? ids)
+    const langs = new Map(queue.map((s) => [s.id, s.lang]))
+    const n = pickNext(ids, song?.id ?? null, shuffle, bag.current ?? ids, undefined, (id) => langs.get(id))
     if (auto && radio && song && (n.wrapped || n.id === null || !ids.includes(song.id))) {
       bag.current = null
       return onQueueEnd(song)

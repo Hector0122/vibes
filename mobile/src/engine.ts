@@ -150,11 +150,15 @@ export class Engine {
   /** Chapters play in order (no shuffle) and the book stops at its end. */
   private pick(cur: CloudSong | null): ReturnType<typeof pickNext> {
     const book = !!cur?.book
+    const list = this.list()
+    const langs = new Map(list.map((s) => [s.id, s.lang]))
     const n = pickNext(
-      this.list().map((s) => s.id),
+      list.map((s) => s.id),
       cur?.id ?? null,
       this.state.shuffle && !book,
-      this.bag
+      this.bag,
+      undefined,
+      (id) => langs.get(id)
     )
     return book && n.wrapped ? { ...n, id: null } : n
   }

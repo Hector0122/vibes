@@ -63,6 +63,7 @@ let REQUESTS: Req[] = []
 /** Begun uploads (their request) and the songs committed after them (audiobook chapters). */
 let BEGUN = new Map<string, { meta: CloudSong; size: number; sha256: string }>()
 let UPLOADED: CloudSong[] = []
+let DELETED: string[] = []
 let COVERS: { type: string | null; bytes: number }[] = []
 function fakeWorker(): void {
   globalThis.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -91,7 +92,13 @@ function fakeWorker(): void {
       ({ ok: status < 400, status, json: async () => body }) as Response
     if (auth !== `Bearer ${TOKEN}`) return json({ error: 'Unauthorized' }, 401)
     if (url.endsWith('/v1/health')) return json({ ok: true })
-    if (url.endsWith('/v1/songs')) return json({ songs: [...SONGS, ...UPLOADED] })
+    if (url.endsWith('/v1/songs'))
+      return json({ songs: [...SONGS, ...UPLOADED].filter((s) => !DELETED.includes(s.id)) })
+    const gone = /\/v1\/songs\/([^/]+)$/.exec(url)
+    if (gone && init?.method === 'DELETE') {
+      DELETED.push(gone[1])
+      return json({ deleted: true })
+    }
     const up = /\/v1\/songs\/([^/]+)\/(upload|commit)$/.exec(url)
     if (url.endsWith('/v1/covers') && init?.method === 'POST') {
       COVERS.push({ type: new Headers(init.headers).get('content-type'), bytes: (init.body as Uint8Array).length })
@@ -190,6 +197,7 @@ beforeEach(() => {
   REQUESTS = []
   BEGUN = new Map()
   UPLOADED = []
+  DELETED = []
   COVERS = []
   OPS = []
   online = true
@@ -772,6 +780,32 @@ describe('editing playlists on the phone', () => {
       await fireEvent.press(await screen.findByText('Eliminar playlist'))
       await waitFor(() => expect(PLAYLISTS.map((p) => p.id)).toEqual(['p1']))
       expect(screen.getByTestId('title')).toHaveTextContent('Biblioteca')
+    } finally {
+      alert.mockRestore()
+    }
+  })
+
+  it('deleting a song: asks first, then it leaves the cloud, the phone and its playlists', async () => {
+    PLAYLISTS = [{ id: 'p1', name: 'Viaje', songIds: ['ccccccccccc', 'aaaaaaaaaaa'], createdAt: 0, updatedAt: 0 }]
+    await renderLibrary()
+    await fireEvent.press(screen.getByText('Canciones'))
+    let answer: 'Cancelar' | 'Eliminar' = 'Cancelar'
+    const alert = jest
+      .spyOn(Alert, 'alert')
+      .mockImplementation((_t, _m, b) => b?.find((x) => x.text === answer)?.onPress?.())
+    try {
+      await fireEvent(await screen.findByTestId('song-ccccccccccc'), 'longPress')
+      await fireEvent.press(await screen.findByText('Eliminar de tu música'))
+      expect(DELETED).toEqual([]) // "Cancelar": nothing happens
+
+      answer = 'Eliminar'
+      await fireEvent(screen.getByTestId('song-ccccccccccc'), 'longPress')
+      await fireEvent.press(await screen.findByText('Eliminar de tu música'))
+      await waitFor(() => expect(screen.queryByTestId('song-ccccccccccc')).toBeNull())
+      expect(DELETED).toEqual(['ccccccccccc'])
+      expect(OPS).toEqual([{ type: 'remove', id: 'p1', songId: 'ccccccccccc' }])
+      expect(PLAYLISTS[0].songIds).toEqual(['aaaaaaaaaaa'])
+      expect(screen.getByTestId('count')).toHaveTextContent('2 canciones en tu nube')
     } finally {
       alert.mockRestore()
     }

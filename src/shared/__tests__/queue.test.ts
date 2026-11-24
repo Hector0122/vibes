@@ -117,3 +117,28 @@ describe('pickNext wrapped (the list ran out: the radio takes over)', () => {
     expect(pickNext(Q, 'gone', true, []).wrapped).toBe(false) // a preview from outside the list
   })
 })
+
+describe('pickNext keeps the language in shuffle', () => {
+  const L: Record<string, 'es' | 'en' | null> = { a: 'es', b: 'en', c: 'es', d: 'en', e: null }
+  const langOf = (id: string) => L[id]
+
+  it('after a Spanish song only Spanish ones; after an English one only English', () => {
+    for (let run = 0; run < 30; run++) {
+      expect(pickNext(Q, 'a', true, Q, Math.random, langOf).id).toBe('c')
+      expect(['b', 'd']).toContain(pickNext(Q, 'd', true, ['b'], Math.random, langOf).id)
+    }
+  })
+
+  it('a full Spanish round, then it starts over in Spanish', () => {
+    const n = pickNext(Q, 'c', true, [], Math.random, langOf)
+    expect(n).toMatchObject({ id: 'a', wrapped: true })
+  })
+
+  it('no restriction: in order, from an unknown song, at the start, or alone in its language', () => {
+    expect(pickNext(Q, 'a', false, [], Math.random, langOf).id).toBe('b') // in order: the list as it is
+    const fromUnknown = new Set(Array.from({ length: 60 }, () => pickNext(Q, 'e', true, Q, Math.random, langOf).id))
+    expect(fromUnknown.size).toBe(4)
+    expect(pickNext(Q, null, true, Q, seq(0.99), langOf).id).toBe('e')
+    expect(pickNext(['a', 'b', 'd'], 'a', true, ['b', 'd'], seq(0), langOf).id).toBe('b')
+  })
+})

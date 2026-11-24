@@ -26,6 +26,7 @@ import {
   type PlaylistOp,
   type PostPlaylistOpsRequest,
   type ListPlaysResponse,
+  type ListDeletionsResponse,
   type PostPlaysRequest,
   type PutPlaylistsRequest,
   type CloudSong,
@@ -204,7 +205,11 @@ export function createApp(presign: Presigner, opts: AppOptions = {}): App {
   async function deleteSong(env: Env, id: string): Promise<{ deleted: true }> {
     if (!(await getSong(env, id))) fail(404, 'Song not found')
     await env.BUCKET.delete(audioKey(id))
-    await env.DB.prepare('DELETE FROM songs WHERE id = ?').bind(id).run()
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM songs WHERE id = ?').bind(id),
+      // So the other device removes it too.
+      env.DB.prepare('INSERT INTO deletions (id, deleted_at) VALUES (?, ?)').bind(id, Date.now())
+    ])
     return { deleted: true }
   }
 
@@ -444,6 +449,21 @@ export function createApp(presign: Presigner, opts: AppOptions = {}): App {
     return { ok: true }
   }
 
+  async function listDeletions(env: Env): Promise<ListDeletionsResponse> {
+    const { results } = await env.DB.prepare('SELECT seq, id FROM deletions ORDER BY seq LIMIT 1000').all<{
+      seq: number
+      id: string
+    }>()
+    return { deletions: results }
+  }
+
+  async function ackDeletions(env: Env, request: Request): Promise<{ ok: true }> {
+    const body = await readJson<{ upTo?: unknown }>(request)
+    if (!Number.isSafeInteger(body?.upTo)) fail(400, 'Invalid upTo')
+    await env.DB.prepare('DELETE FROM deletions WHERE seq <= ?').bind(body.upTo).run()
+    return { ok: true }
+  }
+
   async function route(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
     if (!url.pathname.startsWith(API_PREFIX + '/')) fail(404, 'Not found')
@@ -462,6 +482,8 @@ export function createApp(presign: Presigner, opts: AppOptions = {}): App {
     if (path === '/plays' && method === 'GET') return json(await listPlays(env))
     if (path === '/plays/ack' && method === 'POST') return json(await ackPlays(env, request))
     if (path === '/covers' && method === 'POST') return json(await uploadCover(env, request, url))
+    if (path === '/deletions' && method === 'GET') return json(await listDeletions(env))
+    if (path === '/deletions/ack' && method === 'POST') return json(await ackDeletions(env, request))
     if (path === '/search' && method === 'GET') return json(await search(env, url))
     if (path === '/recommendations' && method === 'GET') return json(await getRecommendations(env))
     if (path === '/recommendations' && method === 'PUT') return json(await putRecommendations(env, request))

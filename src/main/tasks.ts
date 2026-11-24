@@ -2,11 +2,12 @@
 // tests drive them directly; index.ts wires them to IPC.
 import { createHash } from 'crypto'
 import { existsSync } from 'fs'
-import { readFile } from 'fs/promises'
+import { readFile, rm } from 'fs/promises'
 import { join } from 'path'
 import { pickMeta, validateMeta, YOUTUBE_ID_RE } from '../shared/api'
+import { fillByArtist, songLang, type Lang } from '../shared/lang'
 import type { ImportResult, LocalSong, SearchResult, TaskProgress } from '../shared/types'
-import type { CloudClient } from './cloud/client'
+import { CloudApiError, type CloudClient } from './cloud/client'
 import { readEsoundLibrary } from './esound'
 import type { Library } from './library'
 import { downloadAudio, eachLimit, remuxToM4a, type Tools } from './media'
@@ -70,6 +71,81 @@ export async function downloadMissing(ctx: TaskContext): Promise<TaskProgress> {
     ctx.onProgress?.({ ...progress })
   })
   return progress
+}
+
+/**
+ * Each saved song's language: from its lyrics (once), else its title, else its
+ * artist's other songs. A change goes up to the cloud so the phone's shuffle
+ * keeps it too. `lyrics` throws when it can't tell (offline): tried next time.
+ */
+export async function detectLanguages(
+  ctx: TaskContext,
+  lyrics: (s: LocalSong) => Promise<string | null>,
+  client: CloudClient | null
+): Promise<number> {
+  const songs = ctx.library.list().filter((s) => s.saved)
+  const own = new Map<string, Lang>()
+  for (const s of songs) {
+    let l = s.lang
+    if (l === undefined) {
+      try {
+        l = songLang(await lyrics(s), s.title)
+      } catch {
+        continue
+      }
+      await setSong(ctx, s.id, { lang: l })
+    }
+    if (l) own.set(s.id, l)
+  }
+  const all = fillByArtist(songs, own)
+  let changed = 0
+  for (const s of songs) {
+    const now = ctx.library.get(s.id)!
+    if (now.lang === undefined) continue // its lyrics couldn't be checked yet
+    const l = all.get(s.id) ?? null
+    if (now.lang !== l) await setSong(ctx, s.id, { lang: l })
+    if (s.lang === l || !client || !now.uploaded || !hasAudio(ctx, now)) continue
+    // Same audio: the cloud only updates the metadata. Failed: the old value, so it's retried.
+    if (await uploadOne(ctx, client, ctx.library.get(s.id)!)) changed++
+    else await setSong(ctx, s.id, { lang: s.lang })
+  }
+  return changed
+}
+
+/**
+ * Deletes songs here (entry and audio file) and, with `client`, in the cloud
+ * first: if the cloud fails nothing is lost here, and it can be tried again.
+ */
+export async function deleteSongs(ctx: TaskContext, ids: string[], client: CloudClient | null): Promise<string[]> {
+  const gone: string[] = []
+  for (const id of ids) {
+    const s = ctx.library.get(id)
+    if (!s) continue
+    if (client) await client.deleteSong(id)
+    if (s.file) await rm(join(ctx.audioDir, s.file), { force: true })
+    await ctx.library.remove(id)
+    gone.push(id)
+  }
+  return gone
+}
+
+/** Songs deleted on the phone: deleted here too, then cleared in the cloud. */
+export async function applyCloudDeletions(ctx: TaskContext, client: CloudClient): Promise<string[]> {
+  let deletions
+  try {
+    deletions = (await client.listDeletions()).deletions
+  } catch (err) {
+    if (err instanceof CloudApiError && err.status === 404) return [] // an older Worker
+    throw err
+  }
+  if (deletions.length === 0) return []
+  const gone = await deleteSongs(
+    ctx,
+    deletions.map((d) => d.id),
+    null
+  )
+  await client.ackDeletions(Math.max(...deletions.map((d) => d.seq)))
+  return gone
 }
 
 /** Uploads every local song that isn't in the cloud yet. */

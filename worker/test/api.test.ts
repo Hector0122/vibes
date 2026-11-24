@@ -135,6 +135,18 @@ describe('stream and delete', () => {
     expect(h.r2.objects.size).toBe(0)
     expect(await listSongs()).toEqual([])
   })
+
+  it('a deletion is kept for the desktop until it says it applied it', async () => {
+    await uploadComplete()
+    await h.call('DELETE', `/v1/songs/${SONG_ID}`)
+    const { deletions } = (await (await h.call('GET', '/v1/deletions')).json()) as { deletions: { seq: number; id: string }[] }
+    expect(deletions.map((d) => d.id)).toEqual([SONG_ID])
+    expect((await h.call('DELETE', `/v1/songs/${SONG_ID}`)).status).toBe(404) // twice: nothing new to record
+    expect((await h.call('POST', '/v1/deletions/ack', { upTo: 'x' })).status).toBe(400)
+    expect((await h.call('POST', '/v1/deletions/ack', { upTo: deletions[0].seq })).status).toBe(200)
+    expect(await (await h.call('GET', '/v1/deletions')).json()).toEqual({ deletions: [] })
+    expect((await h.call('GET', '/v1/deletions', undefined, null)).status).toBe(401)
+  })
 })
 
 describe('playlists', () => {

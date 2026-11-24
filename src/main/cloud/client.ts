@@ -8,6 +8,7 @@ import {
   type ListPlaylistsResponse,
   type ListPlaylistOpsResponse,
   type ListPlaysResponse,
+  type ListDeletionsResponse,
   type ListRequestsResponse,
   type PutRecommendationsRequest,
   type ListSongsResponse,
@@ -136,6 +137,24 @@ export class CloudClient {
 
   async ackPlaylistOps(upTo: number): Promise<void> {
     await this.api('POST', '/playlists/ops/ack', { upTo })
+  }
+
+  /** Deletes a song (audio and listing); a song that isn't there is fine. */
+  async deleteSong(id: string): Promise<void> {
+    try {
+      await this.api('DELETE', `/songs/${encodeURIComponent(id)}`)
+    } catch (err) {
+      if (!(err instanceof CloudApiError && err.status === 404)) throw err
+    }
+  }
+
+  /** Songs deleted in the cloud (e.g. on the phone), not yet removed here. */
+  listDeletions(): Promise<ListDeletionsResponse> {
+    return this.api('GET', '/deletions')
+  }
+
+  async ackDeletions(upTo: number): Promise<void> {
+    await this.api('POST', '/deletions/ack', { upTo })
   }
 
   /** Plays counted on the phone, not yet counted here. */

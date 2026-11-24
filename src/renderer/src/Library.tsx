@@ -1,5 +1,5 @@
 import type { LocalSong, Playlist } from '../../shared/types'
-import { AlertIcon, HeartIcon, MusicIcon, PlayIcon, SearchIcon, ShuffleIcon } from './icons'
+import { AlertIcon, HeartIcon, MusicIcon, PlayIcon, SearchIcon, ShuffleIcon, TrashIcon } from './icons'
 import { SongTable } from './SongTable'
 
 interface Props {
@@ -18,6 +18,8 @@ interface Props {
   onGoSearch: () => void
   playlists: Playlist[]
   onAddTo: (playlistId: string, songId: string) => void
+  /** Deletes songs everywhere (the caller asks first). */
+  onDelete: (songs: LocalSong[]) => void
 }
 
 /** The most common error among the songs, so one problem shows once instead of on every row. */
@@ -34,6 +36,8 @@ export function Library(p: Props): React.JSX.Element {
   const inCloud = p.songs.filter((s) => s.uploaded).length
   const problem = topError(p.songs)
   const cloudProblem = !!problem && /nube|token/i.test(problem.message)
+  // Songs that never downloaded: nothing to keep.
+  const broken = p.songs.filter((s) => s.error && !s.file)
 
   return (
     <div className="relative flex-1 overflow-y-auto">
@@ -92,6 +96,17 @@ export function Library(p: Props): React.JSX.Element {
           )}
         </div>
       )}
+      {broken.length > 0 && (
+        <div className="mx-8 mb-4 flex items-center gap-3 rounded-xl bg-white/[0.03] px-4 py-3 text-sm text-neutral-300 ring-1 ring-white/5">
+          <span className="flex-1">
+            {broken.length === 1 ? '1 canción no se pudo descargar' : `${broken.length} canciones no se pudieron descargar`}
+          </span>
+          <button className="btn h-8" onClick={() => p.onDelete(broken)}>
+            <TrashIcon className="h-4 w-4" />
+            {broken.length === 1 ? 'Eliminarla' : 'Eliminarlas'}
+          </button>
+        </div>
+      )}
 
       {p.songs.length === 0 ? (
         <div className="mx-8 flex flex-col items-center gap-4 rounded-2xl bg-white/[0.03] p-12 text-center ring-1 ring-white/5">
@@ -111,6 +126,7 @@ export function Library(p: Props): React.JSX.Element {
             onPlay={p.onPlay}
             playlists={p.playlists}
             onAddTo={p.onAddTo}
+            onDelete={(s) => p.onDelete([s])}
           />
           {p.visible.length === 0 && <p className="px-8 py-8 text-neutral-500">Nada coincide con tu búsqueda.</p>}
         </>

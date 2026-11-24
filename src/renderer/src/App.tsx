@@ -83,6 +83,19 @@ export default function App(): React.JSX.Element {
   const clean = (err: unknown): string =>
     (err as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
 
+  /** Deletes songs here, in the cloud and from the playlists, after asking. */
+  async function deleteSongs(list: LocalSong[]): Promise<void> {
+    if (!list.length) return
+    const what = list.length === 1 ? `«${list[0].title}»` : `estas ${list.length} canciones`
+    if (!window.confirm(`¿Eliminar ${what}? Se borra de esta compu, de la nube (y del celular) y de tus playlists.`)) return
+    try {
+      const gone = await window.api.deleteSongs(list.map((s) => s.id))
+      setMessage(gone.length === 1 ? 'Canción eliminada' : `${gone.length} canciones eliminadas`)
+    } catch (err) {
+      setMessage(clean(err))
+    }
+  }
+
   async function addToPlaylist(playlistId: string, songId: string): Promise<void> {
     const pl = playlists.find((x) => x.id === playlistId)
     try {
@@ -102,10 +115,12 @@ export default function App(): React.JSX.Element {
     const offSong = window.api.onSongUpdated((s) =>
       setSongs((prev) => (prev.some((p) => p.id === s.id) ? prev.map((p) => (p.id === s.id ? s : p)) : [...prev, s]))
     )
+    const offRemoved = window.api.onSongsRemoved((ids) => setSongs((prev) => prev.filter((s) => !ids.includes(s.id))))
     const offProgress = window.api.onProgress(setProgress)
     const offPlaylists = window.api.onPlaylistsChanged(() => void refreshPlaylists())
     return () => {
       offSong()
+      offRemoved()
       offProgress()
       offPlaylists()
     }
@@ -415,6 +430,7 @@ export default function App(): React.JSX.Element {
               onGoSearch={() => setView('home')}
               playlists={playlists}
               onAddTo={addToPlaylist}
+              onDelete={(list) => void deleteSongs(list)}
             />
           </div>
           {openPlaylist && (

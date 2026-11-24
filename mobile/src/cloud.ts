@@ -53,6 +53,8 @@ export interface Cloud {
   beginUpload(id: string, req: UploadBeginRequest): Promise<UploadBeginResponse>
   /** The file is in the cloud: list it. */
   commit(id: string): Promise<CloudSong>
+  /** Deletes a song from the cloud (the computer removes it too). */
+  deleteSong(id: string): Promise<void>
   /** Stores an image (a book's cover); returns its URL, which loads without the token. */
   uploadCover(bytes: Uint8Array, type: string): Promise<string>
 }
@@ -148,6 +150,14 @@ export function createCloud(opts: {
     beginUpload: (id, req) =>
       call<UploadBeginResponse>(`/songs/${encodeURIComponent(id)}/upload`, 'POST', req),
     commit: (id) => call<CloudSong>(`/songs/${encodeURIComponent(id)}/commit`, 'POST'),
+    deleteSong: (id) =>
+      call<unknown>(`/songs/${encodeURIComponent(id)}`, 'DELETE').then(
+        () => undefined,
+        (e: unknown) => {
+          if (e instanceof CloudError && e.status === 404) return // already gone
+          throw e
+        }
+      ),
     uploadCover: (bytes, type) =>
       call<UploadCoverResponse>('/covers', 'POST', bytes, type).then((r) => r.coverUrl)
   }

@@ -2,6 +2,8 @@
 // A song is identified by its YouTube video id; its audio lives in R2 at
 // songs/{id}.m4a and its metadata in D1.
 
+import type { Lang } from './lang'
+
 export const API_PREFIX = '/v1'
 export const PRESIGN_EXPIRES_SECONDS = 15 * 60
 export const YOUTUBE_ID_RE = /^[A-Za-z0-9_-]{11}$/
@@ -32,6 +34,8 @@ export interface SongMeta {
   book?: string | null
   /** 1-based order of the chapter in its book. */
   chapter?: number | null
+  /** Its language, worked out on the computer (shuffle doesn't mix them). */
+  lang?: Lang | null
 }
 
 export interface CloudSong extends SongMeta {
@@ -85,6 +89,7 @@ export function validateMeta(m: unknown): string | null {
   if (meta.book != null && (typeof meta.book !== 'string' || !meta.book.trim() || meta.book.length > 300)) {
     return 'Invalid book'
   }
+  if (meta.lang != null && meta.lang !== 'es' && meta.lang !== 'en') return 'Invalid lang'
   const c = meta.chapter
   if (c != null && (!Number.isInteger(c) || (c as number) < 1 || (c as number) > 100_000)) {
     return 'Invalid chapter'
@@ -104,7 +109,8 @@ export function pickMeta(m: SongMeta): SongMeta {
     durationSec: m.durationSec,
     coverUrl: m.coverUrl,
     // Only on audiobook chapters, so songs keep their exact shape.
-    ...(m.book ? { book: m.book.trim(), chapter: m.chapter ?? null } : {})
+    ...(m.book ? { book: m.book.trim(), chapter: m.chapter ?? null } : {}),
+    ...(m.lang ? { lang: m.lang } : {})
   }
 }
 
@@ -247,6 +253,11 @@ export interface Play {
 
 export interface PostPlaysRequest {
   plays: Play[]
+}
+
+/** Songs deleted in the cloud; seq: pass the highest one to /deletions/ack once applied. */
+export interface ListDeletionsResponse {
+  deletions: { seq: number; id: string }[]
 }
 
 export interface ListPlaysResponse {

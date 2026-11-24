@@ -388,6 +388,24 @@ export default function App(): React.JSX.Element {
       }
     })
 
+  const deleteSong = async (s: CloudSong): Promise<void> => {
+    if (!cloud) return
+    setError(null)
+    try {
+      await cloud.deleteSong(s.id)
+      downloads.remove([s.id])
+      // Out of the playlists too (the computer does the same on its copy).
+      const ops: PlaylistOp[] = playlists
+        .filter((p) => p.songIds.includes(s.id))
+        .map((p) => ({ type: 'remove', id: p.id, songId: s.id }))
+      if (ops.length) await editPlaylists(ops)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      void refresh()
+    }
+  }
+
   const songMenu = (s: CloudSong): void => {
     const actions: Action[] = playlists
       .filter((p) => !p.songIds.includes(s.id))
@@ -396,6 +414,17 @@ export default function App(): React.JSX.Element {
         onPress: () => void editPlaylists([{ type: 'add', id: p.id, songIds: [s.id] }])
       }))
     actions.push({ label: 'Agregar a una playlist nueva…', onPress: () => askNewPlaylist(s) })
+    if (cloud && !offline) {
+      actions.push({
+        label: 'Eliminar de tu música',
+        destructive: true,
+        onPress: () =>
+          Alert.alert('Eliminar canción', `¿Eliminar «${s.title}»? Se borra de la nube, de este teléfono y de la compu.`, [
+            { text: 'Cancelar', style: 'cancel' },
+            { text: 'Eliminar', style: 'destructive', onPress: () => void deleteSong(s) }
+          ])
+      })
+    }
     if (selected) {
       actions.unshift({
         label: `Quitar de «${selected.name}»`,
