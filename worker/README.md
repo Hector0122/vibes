@@ -12,5 +12,8 @@ Configuración: ver el [README principal](../README.md#tu-nube-una-sola-vez).
 | POST | `/v1/songs/{id}/commit` | La publica cuando el audio ya está completo en R2 |
 | GET | `/v1/songs/{id}/stream` | URL firmada para reproducir o descargar |
 | DELETE | `/v1/songs/{id}` | Borra audio y metadata |
+| GET | `/v1/velody` | Canciones mandadas a Velody (la app de práctica), en orden |
+| PUT | `/v1/velody/{id}` | Manda una canción a Velody (tiene que estar completa en la nube; no audiolibros) |
+| DELETE | `/v1/velody/{id}` | La quita de esa lista (Velody, al terminar de importarla, o el usuario) |
 
 `pnpm test` corre la API con el SQL real de `migrations/` sobre SQLite y un R2 en memoria.

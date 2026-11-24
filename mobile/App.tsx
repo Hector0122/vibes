@@ -414,6 +414,16 @@ export default function App(): React.JSX.Element {
         onPress: () => void editPlaylists([{ type: 'add', id: p.id, songIds: [s.id] }])
       }))
     actions.push({ label: 'Agregar a una playlist nueva…', onPress: () => askNewPlaylist(s) })
+    if (cloud && !offline && !s.book) {
+      actions.push({
+        label: 'Mandar a Velody',
+        onPress: () =>
+          void cloud.sendToVelody(s.id).then(
+            () => Alert.alert('Mandada a Velody', `«${s.title}» se separa en Velody la próxima vez que revise.`),
+            (e: unknown) => setError((e as Error).message)
+          )
+      })
+    }
     if (cloud && !offline) {
       actions.push({
         label: 'Eliminar de tu música',

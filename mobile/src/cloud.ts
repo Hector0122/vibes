@@ -55,6 +55,8 @@ export interface Cloud {
   commit(id: string): Promise<CloudSong>
   /** Deletes a song from the cloud (the computer removes it too). */
   deleteSong(id: string): Promise<void>
+  /** Sends a song to Velody (the practice app on the computer), which downloads and separates it. */
+  sendToVelody(id: string): Promise<void>
   /** Stores an image (a book's cover); returns its URL, which loads without the token. */
   uploadCover(bytes: Uint8Array, type: string): Promise<string>
 }
@@ -158,6 +160,7 @@ export function createCloud(opts: {
           throw e
         }
       ),
+    sendToVelody: (id) => call<unknown>(`/velody/${encodeURIComponent(id)}`, 'PUT').then(() => undefined),
     uploadCover: (bytes, type) =>
       call<UploadCoverResponse>('/covers', 'POST', bytes, type).then((r) => r.coverUrl)
   }

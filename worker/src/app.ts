@@ -31,6 +31,8 @@ import {
   type PutPlaylistsRequest,
   type CloudSong,
   type ListRequestsResponse,
+  type ListVelodySendsResponse,
+  type VelodySend,
   type PutRecommendationsRequest,
   type RecommendationsResponse,
   type ListSongsResponse,
@@ -207,6 +209,7 @@ export function createApp(presign: Presigner, opts: AppOptions = {}): App {
     await env.BUCKET.delete(audioKey(id))
     await env.DB.batch([
       env.DB.prepare('DELETE FROM songs WHERE id = ?').bind(id),
+      env.DB.prepare('DELETE FROM velody_sends WHERE id = ?').bind(id),
       // So the other device removes it too.
       env.DB.prepare('INSERT INTO deletions (id, deleted_at) VALUES (?, ?)').bind(id, Date.now())
     ])
@@ -464,6 +467,37 @@ export function createApp(presign: Presigner, opts: AppOptions = {}): App {
     return { ok: true }
   }
 
+  async function listVelodySends(env: Env): Promise<ListVelodySendsResponse> {
+    // Only songs still complete in the cloud: Velody downloads them right after listing.
+    const { results } = await env.DB.prepare(
+      `SELECT v.id, v.sent_at, s.meta FROM velody_sends v JOIN songs s ON s.id = v.id
+       WHERE s.status = 'complete' ORDER BY v.sent_at, v.id`
+    ).all<{ id: string; sent_at: number; meta: string }>()
+    return {
+      sends: results.map((r) => {
+        const meta = JSON.parse(r.meta) as SongMeta
+        return { id: r.id, title: meta.title, artists: meta.artists, durationSec: meta.durationSec ?? null, sentAt: r.sent_at }
+      })
+    }
+  }
+
+  /** Sending again keeps its place in line. Audiobook chapters aren't music to practise. */
+  async function sendToVelody(env: Env, id: string): Promise<VelodySend> {
+    const song = await getSong(env, id)
+    if (!song || song.status !== 'complete') return fail(404, 'Song not found')
+    const meta = JSON.parse(song.meta) as SongMeta
+    if (meta.book) fail(400, 'Los audiolibros no se mandan a Velody')
+    await env.DB.prepare('INSERT INTO velody_sends (id, sent_at) VALUES (?, ?) ON CONFLICT(id) DO NOTHING')
+      .bind(id, Date.now())
+      .run()
+    return (await listVelodySends(env)).sends.find((x) => x.id === id)!
+  }
+
+  async function unsendToVelody(env: Env, id: string): Promise<{ deleted: true }> {
+    await env.DB.prepare('DELETE FROM velody_sends WHERE id = ?').bind(id).run()
+    return { deleted: true }
+  }
+
   async function route(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
     if (!url.pathname.startsWith(API_PREFIX + '/')) fail(404, 'Not found')
@@ -489,6 +523,15 @@ export function createApp(presign: Presigner, opts: AppOptions = {}): App {
     if (path === '/recommendations' && method === 'PUT') return json(await putRecommendations(env, request))
     if (path === '/requests' && method === 'GET') return json(await listRequests(env))
     if (path === '/requests' && method === 'POST') return json(await addRequest(env, request))
+
+    if (path === '/velody' && method === 'GET') return json(await listVelodySends(env))
+    const vs = /^\/velody\/([^/]+)$/.exec(path)
+    if (vs) {
+      if (!YOUTUBE_ID_RE.test(vs[1])) fail(400, 'Invalid song id')
+      if (method === 'PUT') return json(await sendToVelody(env, vs[1]))
+      if (method === 'DELETE') return json(await unsendToVelody(env, vs[1]))
+      return fail(405, 'Method not allowed')
+    }
 
     const rq = /^\/requests\/([^/]+)(\/fail)?$/.exec(path)
     if (rq) {

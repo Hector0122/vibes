@@ -134,9 +134,18 @@ export interface VibesAPI {
   onSongUpdated(cb: (song: LocalSong) => void): () => void
   /** Deletes songs: here, in the cloud and from the playlists. */
   deleteSongs(ids: string[]): Promise<string[]>
+  /** Sends songs to Velody (they have to be in the cloud). */
+  sendToVelody(ids: string[]): Promise<SendToVelodyResult>
+  /** Ids of the songs sent to Velody and not imported there yet. */
+  listVelodySends(): Promise<string[]>
   /** Songs deleted (here or on the phone). */
   onSongsRemoved(cb: (ids: string[]) => void): () => void
   /** Playlists changed outside the window (edits from the phone). */
   onPlaylistsChanged(cb: () => void): () => void
   onProgress(cb: (p: TaskProgress) => void): () => void
+}
+
+export interface SendToVelodyResult {
+  sent: string[]
+  skipped: { id: string; title: string; reason: string }[]
 }

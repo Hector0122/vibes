@@ -20,6 +20,8 @@ interface Props {
   onAddTo: (playlistId: string, songId: string) => void
   /** Deletes songs everywhere (the caller asks first). */
   onDelete: (songs: LocalSong[]) => void
+  onSendToVelody: (song: LocalSong) => void
+  sentToVelody: Set<string>
 }
 
 /** The most common error among the songs, so one problem shows once instead of on every row. */
@@ -127,6 +129,8 @@ export function Library(p: Props): React.JSX.Element {
             playlists={p.playlists}
             onAddTo={p.onAddTo}
             onDelete={(s) => p.onDelete([s])}
+            onSendToVelody={p.onSendToVelody}
+            sentToVelody={p.sentToVelody}
           />
           {p.visible.length === 0 && <p className="px-8 py-8 text-neutral-500">Nada coincide con tu búsqueda.</p>}
         </>

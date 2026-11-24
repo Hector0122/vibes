@@ -32,6 +32,9 @@ una versión, no en cada push ni en los PR: corre las pruebas localmente antes (
   y subirla a la nube. Las portadas y el álbum reales salen de Deezer.
 - **Biblioteca**: tabla con búsqueda, solo guardadas, reproducir todo / aleatorio, estado por canción
   (en la nube, sin audio, error) y los errores agrupados arriba.
+- **Mandar a Velody**: en cada canción que ya está en la nube, el botón de la púa la manda a
+  [Velody](https://github.com/Hector0122/velody-native) (la app para practicar), que la baja, la separa en
+  pistas y la quita de la lista. En el celular: deja presionada la canción → *Mandar a Velody*.
 - **Playlists**: crear, renombrar, eliminar; agregar con el **+** de cada canción o arrastrándola a la
   barra lateral; reordenar arrastrando.
 - **Reproductor**: reproducción automática, aleatorio tipo baraja (todas suenan antes de repetir),

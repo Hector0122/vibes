@@ -10,6 +10,7 @@ import {
   type ListPlaysResponse,
   type ListDeletionsResponse,
   type ListRequestsResponse,
+  type ListVelodySendsResponse,
   type PutRecommendationsRequest,
   type ListSongsResponse,
   type PutPlaylistsRequest,
@@ -168,6 +169,20 @@ export class CloudClient {
 
   async putRecommendations(req: PutRecommendationsRequest): Promise<void> {
     await this.api('PUT', '/recommendations', req)
+  }
+
+  /** Sends a song to Velody (stays in line until Velody imports it). */
+  async sendToVelody(id: string): Promise<void> {
+    await this.api('PUT', `/velody/${encodeURIComponent(id)}`)
+  }
+
+  /** Songs sent to Velody and not imported yet. */
+  listVelodySends(): Promise<ListVelodySendsResponse> {
+    return this.api('GET', '/velody')
+  }
+
+  async unsendToVelody(id: string): Promise<void> {
+    await this.api('DELETE', `/velody/${encodeURIComponent(id)}`)
   }
 
   async deleteRequest(id: string): Promise<void> {

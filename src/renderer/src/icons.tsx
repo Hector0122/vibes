@@ -136,6 +136,13 @@ export const RadioIcon = icon(
   </>
 )
 export const CloseIcon = icon(<path d="M6 6l12 12M18 6L6 18" />)
+/** Velody (the practice app): a guitar pick with a right arrow. */
+export const VelodyIcon = icon(
+  <>
+    <path d="M12 3.5c4 0 7 1.4 7 4.2 0 4-3.6 9.2-7 12.8C8.6 16.9 5 11.7 5 7.7c0-2.8 3-4.2 7-4.2z" />
+    <path d="M9 10h6M13 8l2 2-2 2" />
+  </>
+)
 export const TrashIcon = icon(<path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 12.5h9l1-12.5M10 11v5M14 11v5" />)
 
 /** Three bouncing bars: "this song is playing". */

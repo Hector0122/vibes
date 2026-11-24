@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { LocalSong, Playlist } from '../../shared/types'
 import {
+  VelodyIcon,
   AlertIcon,
   CloseIcon,
   CloudCheckIcon,
@@ -32,6 +33,9 @@ interface Props {
   onRemove?: (songId: string) => void
   /** Trash on each row: deletes the song everywhere (asks first). */
   onDelete?: (song: LocalSong) => void
+  /** "Mandar a Velody" on each song already in the cloud; `sentToVelody` are the ones waiting there. */
+  onSendToVelody?: (song: LocalSong) => void
+  sentToVelody?: Set<string>
 }
 
 /** The song list: number/equalizer, cover + title, album, length, status, actions. Rows drag onto playlists. */
@@ -51,6 +55,7 @@ export function SongTable(p: Props): React.JSX.Element {
         </span>
         <span className="w-8" />
         <span className="w-8" />
+        {p.onSendToVelody && <span className="w-8" />}
         {p.onDelete && <span className="w-8" />}
       </div>
       <ul className="mt-1">
@@ -172,6 +177,25 @@ export function SongTable(p: Props): React.JSX.Element {
                   )
                 )}
               </span>
+              {p.onSendToVelody && (
+                <span className="flex w-8 justify-center">
+                  {s.uploaded &&
+                    (p.sentToVelody?.has(s.id) ? (
+                      <span className="p-1 text-pink-400" title="Mandada a Velody: se importa la próxima vez que Velody revise">
+                        <VelodyIcon className="h-4 w-4" />
+                      </span>
+                    ) : (
+                      <button
+                        className="icon p-1 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-pink-400"
+                        aria-label={`Mandar ${s.title} a Velody`}
+                        title="Mandar a Velody para practicarla"
+                        onClick={() => p.onSendToVelody!(s)}
+                      >
+                        <VelodyIcon className="h-4 w-4" />
+                      </button>
+                    ))}
+                </span>
+              )}
               {p.onDelete && (
                 <span className="flex w-8 justify-center">
                   <button

@@ -344,3 +344,17 @@ export function applyPlaylistOp(list: CloudPlaylist[], op: PlaylistOp, now: numb
       return list.map((p) => (p.id === op.id ? touch(p, { songIds: p.songIds.filter((s) => s !== op.songId) }) : p))
   }
 }
+
+/** A song sent to Velody, waiting for it to download and separate it. */
+export interface VelodySend {
+  id: string
+  title: string
+  artists: string
+  durationSec: number | null
+  sentAt: number
+}
+
+/** GET /velody: oldest first. PUT /velody/{id} sends a song, DELETE /velody/{id} takes it back (or Velody, once imported). */
+export interface ListVelodySendsResponse {
+  sends: VelodySend[]
+}

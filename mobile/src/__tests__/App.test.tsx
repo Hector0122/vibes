@@ -64,6 +64,7 @@ let REQUESTS: Req[] = []
 let BEGUN = new Map<string, { meta: CloudSong; size: number; sha256: string }>()
 let UPLOADED: CloudSong[] = []
 let DELETED: string[] = []
+let SENT_TO_VELODY: string[] = []
 let COVERS: { type: string | null; bytes: number }[] = []
 function fakeWorker(): void {
   globalThis.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -94,6 +95,11 @@ function fakeWorker(): void {
     if (url.endsWith('/v1/health')) return json({ ok: true })
     if (url.endsWith('/v1/songs'))
       return json({ songs: [...SONGS, ...UPLOADED].filter((s) => !DELETED.includes(s.id)) })
+    const velody = /\/v1\/velody\/([^/]+)$/.exec(url)
+    if (velody && init?.method === 'PUT') {
+      SENT_TO_VELODY.push(velody[1])
+      return json({ id: velody[1] })
+    }
     const gone = /\/v1\/songs\/([^/]+)$/.exec(url)
     if (gone && init?.method === 'DELETE') {
       DELETED.push(gone[1])
@@ -198,6 +204,7 @@ beforeEach(() => {
   BEGUN = new Map()
   UPLOADED = []
   DELETED = []
+  SENT_TO_VELODY = []
   COVERS = []
   OPS = []
   online = true
@@ -838,6 +845,20 @@ describe('editing playlists on the phone', () => {
       expect(OPS).toEqual([{ type: 'remove', id: 'p1', songId: 'ccccccccccc' }])
       expect(PLAYLISTS[0].songIds).toEqual(['aaaaaaaaaaa'])
       expect(screen.getByTestId('count')).toHaveTextContent('2 canciones en tu nube')
+    } finally {
+      alert.mockRestore()
+    }
+  })
+
+  it('Mandar a Velody: from the song menu, the song goes to the cloud list Velody reads', async () => {
+    await renderLibrary()
+    await fireEvent.press(screen.getByText('Canciones'))
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {})
+    try {
+      await fireEvent(await screen.findByTestId('song-ccccccccccc'), 'longPress')
+      await fireEvent.press(await screen.findByText('Mandar a Velody'))
+      await waitFor(() => expect(SENT_TO_VELODY).toEqual(['ccccccccccc']))
+      await waitFor(() => expect(alert).toHaveBeenCalledWith('Mandada a Velody', expect.stringContaining('Velody')))
     } finally {
       alert.mockRestore()
     }

@@ -67,6 +67,7 @@ export default function App(): React.JSX.Element {
   const [busy, setBusy] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [cloud, setCloud] = useState<CloudSettingsView | null>(null)
+  const [velodySent, setVelodySent] = useState<Set<string>>(new Set())
   // 'home' | 'library' | 'playlist:<id>'
   const [view, setView] = useState<string>('home')
   const [playlists, setPlaylists] = useState<Playlist[]>([])
@@ -96,6 +97,19 @@ export default function App(): React.JSX.Element {
     }
   }
 
+  const refreshVelody = (): Promise<void> => window.api.listVelodySends().then((ids) => setVelodySent(new Set(ids)))
+
+  /** Vibes → Velody: the song waits in the cloud until Velody downloads and separates it. */
+  async function sendToVelody(song: LocalSong): Promise<void> {
+    try {
+      const r = await window.api.sendToVelody([song.id])
+      setMessage(r.sent.length ? `Mandada a Velody: ${song.title}` : `No se mandó: ${r.skipped[0]?.reason ?? 'error'}`)
+    } catch (err) {
+      setMessage(clean(err))
+    }
+    await refreshVelody()
+  }
+
   async function addToPlaylist(playlistId: string, songId: string): Promise<void> {
     const pl = playlists.find((x) => x.id === playlistId)
     try {
@@ -111,6 +125,7 @@ export default function App(): React.JSX.Element {
     refresh()
     refreshCloud()
     refreshPlaylists()
+    void refreshVelody()
     // A song that's new to the list (e.g. one marked on the phone) is added to it.
     const offSong = window.api.onSongUpdated((s) =>
       setSongs((prev) => (prev.some((p) => p.id === s.id) ? prev.map((p) => (p.id === s.id ? s : p)) : [...prev, s]))
@@ -431,6 +446,8 @@ export default function App(): React.JSX.Element {
               playlists={playlists}
               onAddTo={addToPlaylist}
               onDelete={(list) => void deleteSongs(list)}
+              onSendToVelody={(s) => void sendToVelody(s)}
+              sentToVelody={velodySent}
             />
           </div>
           {openPlaylist && (

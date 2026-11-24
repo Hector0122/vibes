@@ -9,6 +9,7 @@ import { createPlaylistSync } from './cloud/playlist-sync'
 import { toCloudRecommendations } from './cloud/recommendations'
 import { importPhonePlays } from './cloud/plays'
 import { addRequested, processRequests } from './cloud/requests'
+import { sendToVelody } from './cloud/velody'
 import { CloudSettingsStore } from './cloud/settings'
 import { startAudioServer } from './audio-server'
 import { Library } from './library'
@@ -198,6 +199,25 @@ async function main(): Promise<void> {
     const active = await settings.active()
     const client = active ? new CloudClient({ baseUrl: active.url, token: active.token }) : null
     return forget(await deleteSongs(ctx, list, client))
+  })
+
+  // Vibes → Velody: the song waits in the cloud until Velody downloads and separates it.
+  ipcMain.handle('velody:send', async (_e, ids: unknown) => {
+    const active = await settings.active()
+    if (!active) throw new Error('Activa la nube para mandar canciones a Velody')
+    const client = new CloudClient({ baseUrl: active.url, token: active.token })
+    const list = (Array.isArray(ids) ? ids : []).map(String).flatMap((id) => library.get(id) ?? [])
+    return sendToVelody(client, list)
+  })
+  ipcMain.handle('velody:list', async () => {
+    const active = await settings.active()
+    if (!active) return []
+    try {
+      const client = new CloudClient({ baseUrl: active.url, token: active.token, retries: 0 })
+      return (await client.listVelodySends()).sends.map((s) => s.id)
+    } catch {
+      return [] // offline or an older Worker: nothing shown as sent
+    }
   })
 
   // Songs marked on the phone (downloaded here while the app is open), and its plays.
