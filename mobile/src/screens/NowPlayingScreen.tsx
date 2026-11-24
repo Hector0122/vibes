@@ -13,6 +13,7 @@ import {
 import { currentLine } from '../../../src/shared/lyrics'
 import type { Lyrics } from '../../../src/shared/types'
 import { getLyrics } from '../lyrics'
+import { SeekBar } from '../components/SeekBar'
 import { colors } from '../theme'
 import type { Player } from '../usePlayer'
 
@@ -70,6 +71,7 @@ export function NowPlayingScreen({
         )}
         <Text style={styles.title}>{song.title}</Text>
         <Text style={styles.artist}>{song.artists}</Text>
+        <SeekBar time={player.time} duration={player.duration} onSeek={player.seek} />
         <View style={styles.lyrics}>
           {lyrics === undefined ? (
             <ActivityIndicator color={colors.pink} />
@@ -78,7 +80,7 @@ export function NowPlayingScreen({
               <Text
                 key={i}
                 testID={i === at ? 'lyric-now' : undefined}
-                onLayout={(e) => (lineY.current[i] = e.nativeEvent.layout.y + 420)}
+                onLayout={(e) => (lineY.current[i] = e.nativeEvent.layout.y + 470)}
                 onPress={() => player.seek(l.t)}
                 style={[styles.line, i === at && styles.lineNow, i < at && styles.linePast]}
               >

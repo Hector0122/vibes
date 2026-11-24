@@ -283,6 +283,16 @@ describe('with the cloud set up', () => {
     await act(() => audio.mockPlaylistStatus({ currentTime: 12 }))
     await waitFor(() => expect(screen.getByTestId('lyric-now')).toHaveTextContent('Segunda línea'))
     expect(fs.mockDisk.has('file:///docs/vibes/lyrics/aaaaaaaaaaa.json')).toBe(true)
+
+    // The bar: drag shows where it would land; letting go moves the song there.
+    const bar = screen.getByTestId('seek-bar')
+    await fireEvent(bar, 'layout', { nativeEvent: { layout: { width: 200 } } })
+    await fireEvent(bar, 'responderGrant', { nativeEvent: { locationX: 20 } })
+    await fireEvent(bar, 'responderMove', { nativeEvent: { locationX: 150 } })
+    expect(screen.getByTestId('seek-time')).toHaveTextContent('2:30') // 3/4 of 200 s
+    expect(audio.mockPlaylist.seekTo).not.toHaveBeenCalledWith(150)
+    await fireEvent(bar, 'responderRelease', { nativeEvent: { locationX: 150 } })
+    expect(audio.mockPlaylist.seekTo).toHaveBeenLastCalledWith(150)
     await fireEvent.press(screen.getByLabelText('Cerrar'))
     expect(await screen.findByTestId('song-bbbbbbbbbbb')).toBeTruthy()
   })
