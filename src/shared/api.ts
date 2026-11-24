@@ -10,6 +10,14 @@ export const SHA256_RE = /^[0-9a-f]{64}$/
 export const MAX_AUDIO_BYTES = 100 * 1024 * 1024
 /** An audiobook file can be one long .m4b (R2 takes up to 5 GB in a single PUT). */
 export const MAX_BOOK_BYTES = 2 * 1024 * 1024 * 1024
+/** Uploaded covers (audiobooks): POST /covers with the image as the body. */
+export const MAX_COVER_BYTES = 5 * 1024 * 1024
+export const COVER_TYPES: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }
+/** Served without the token (the lock screen loads artwork by plain URL): the random name is the secret. */
+export const COVER_NAME_RE = /^[A-Za-z0-9_-]{22}\.(jpg|png|webp)$/
+export interface UploadCoverResponse {
+  coverUrl: string
+}
 
 export interface SongMeta {
   title: string

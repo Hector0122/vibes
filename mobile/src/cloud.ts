@@ -3,6 +3,7 @@
 // searching (Deezer) + marking songs for the computer to download.
 // No React Native imports, so it is tested against the real Worker with Vitest.
 import {
+  type UploadCoverResponse,
   API_PREFIX,
   type CloudPlaylist,
   type CloudSong,
@@ -52,6 +53,8 @@ export interface Cloud {
   beginUpload(id: string, req: UploadBeginRequest): Promise<UploadBeginResponse>
   /** The file is in the cloud: list it. */
   commit(id: string): Promise<CloudSong>
+  /** Stores an image (a book's cover); returns its URL, which loads without the token. */
+  uploadCover(bytes: Uint8Array, type: string): Promise<string>
 }
 
 /** "https://x.workers.dev/" → "https://x.workers.dev"; '' when it isn't an https URL. */
@@ -75,16 +78,16 @@ export function createCloud(opts: {
   if (!base) throw new CloudError('La URL debe empezar con https://', 0)
   const doFetch = opts.fetch ?? globalThis.fetch
 
-  async function call<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
+  async function call<T>(path: string, method = 'GET', body?: unknown, type = 'application/json'): Promise<T> {
     let res: Response
     try {
       res = await doFetch(`${base}${API_PREFIX}${path}`, {
         method,
         headers: {
           authorization: `Bearer ${opts.token.trim()}`,
-          ...(body !== undefined ? { 'content-type': 'application/json' } : {})
+          ...(body !== undefined ? { 'content-type': type } : {})
         },
-        body: body !== undefined ? JSON.stringify(body) : undefined,
+        body: body === undefined ? undefined : body instanceof Uint8Array ? (body as unknown as BodyInit) : JSON.stringify(body),
         signal: AbortSignal.timeout(opts.timeoutMs ?? 15_000)
       })
     } catch {
@@ -144,6 +147,8 @@ export function createCloud(opts: {
       call<StreamResponse>(`/songs/${encodeURIComponent(id)}/stream`).then((r) => r.url),
     beginUpload: (id, req) =>
       call<UploadBeginResponse>(`/songs/${encodeURIComponent(id)}/upload`, 'POST', req),
-    commit: (id) => call<CloudSong>(`/songs/${encodeURIComponent(id)}/commit`, 'POST')
+    commit: (id) => call<CloudSong>(`/songs/${encodeURIComponent(id)}/commit`, 'POST'),
+    uploadCover: (bytes, type) =>
+      call<UploadCoverResponse>('/covers', 'POST', bytes, type).then((r) => r.coverUrl)
   }
 }

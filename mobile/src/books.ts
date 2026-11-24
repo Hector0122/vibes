@@ -45,6 +45,19 @@ export const guessBookName = (fileName: string): string =>
     .replace(/^\d+[\s._-]+/, '')
     .trim() || chapterTitle(fileName)
 
+const IMAGE_TYPES: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' }
+
+/** Uploads the picked image and sets it as the cover of every chapter (metadata only: the audio stays). */
+export async function setBookCover(cloud: Cloud, picked: PickedFile, chapters: CloudSong[]): Promise<void> {
+  const file = new File(picked.uri)
+  const type = file.type || IMAGE_TYPES[picked.name.split('.').pop()?.toLowerCase() ?? '']
+  if (!type || !Object.values(IMAGE_TYPES).includes(type)) throw new Error('La portada debe ser JPG, PNG o WebP')
+  const coverUrl = await cloud.uploadCover(await file.bytes(), type)
+  for (const { id, size, sha256, updatedAt: _, ...meta } of chapters) {
+    await cloud.beginUpload(id, { meta: { ...meta, coverUrl }, size, sha256 })
+  }
+}
+
 export interface PickedFile {
   uri: string
   name: string
@@ -68,7 +81,9 @@ export async function uploadBook(
   files: PickedFile[],
   book: string,
   existing: number,
-  onProgress: (p: UploadProgress) => void
+  onProgress: (p: UploadProgress) => void,
+  /** The book's cover, when it has one: new chapters keep it. */
+  coverUrl: string | null = null
 ): Promise<void> {
   const sorted = [...files].sort((a, b) =>
     a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
@@ -89,7 +104,7 @@ export async function uploadBook(
         deezerArtistId: null,
         isrc: null,
         durationSec: null,
-        coverUrl: null,
+        coverUrl,
         book,
         chapter: existing + i + 1
       },

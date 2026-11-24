@@ -9,7 +9,7 @@ import {
   type PlaylistOp,
   type SongRequest
 } from '../src/shared/api'
-import { chaptersOf, groupBooks, guessBookName, isBook, uploadBook, type PickedFile } from './src/books'
+import { chaptersOf, groupBooks, guessBookName, isBook, setBookCover, uploadBook, type PickedFile } from './src/books'
 import { CloudError, createCloud, type Cloud } from './src/cloud'
 import { ActionSheet, type Action } from './src/components/ActionSheet'
 import { NameDialog } from './src/components/NameDialog'
@@ -274,11 +274,35 @@ export default function App(): React.JSX.Element {
     setError(null)
     setUpload('Preparando…')
     try {
-      await uploadBook(cloud, files, name, chaptersOf(songs, name).length, (u) =>
-        setUpload(
-          `${u.step === 'hash' ? 'Preparando' : 'Subiendo'} ${u.total > 1 ? `${u.file} de ${u.total} · ` : ''}${Math.round(u.fraction * 100)}%`
-        )
+      const chapters = chaptersOf(songs, name)
+      await uploadBook(
+        cloud,
+        files,
+        name,
+        chapters.length,
+        (u) =>
+          setUpload(
+            `${u.step === 'hash' ? 'Preparando' : 'Subiendo'} ${u.total > 1 ? `${u.file} de ${u.total} · ` : ''}${Math.round(u.fraction * 100)}%`
+          ),
+        chapters[0]?.coverUrl ?? null
       )
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setUpload(null)
+      void refresh()
+    }
+  }
+  /** An image picked on the phone becomes the open book's cover. */
+  const pickCover = async (name: string): Promise<void> => {
+    if (!cloud) return
+    const picked = await File.pickFileAsync({ mimeTypes: 'image/*' })
+    if (picked.canceled || !picked.result) return
+    const f = Array.isArray(picked.result) ? picked.result[0] : picked.result
+    setError(null)
+    setUpload('Subiendo portada…')
+    try {
+      await setBookCover(cloud, { uri: f.uri, name: f.name }, chaptersOf(songs, name))
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -520,6 +544,7 @@ export default function App(): React.JSX.Element {
           book={book}
           onSelectBook={openBook}
           onUploadBook={cloud ? () => void pickBook() : undefined}
+          onBookCover={cloud && book ? () => void pickCover(book) : undefined}
           upload={upload}
           onShuffleAll={(visible) => {
             player.setShuffle(true)

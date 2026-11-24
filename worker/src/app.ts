@@ -2,6 +2,9 @@ import {
   API_PREFIX,
   MAX_AUDIO_BYTES,
   MAX_BOOK_BYTES,
+  MAX_COVER_BYTES,
+  COVER_TYPES,
+  COVER_NAME_RE,
   MAX_QUERY,
   MAX_REQUESTS,
   PRESIGN_EXPIRES_SECONDS,
@@ -36,7 +39,8 @@ import {
   type SongMeta,
   type StreamResponse,
   type UploadBeginRequest,
-  type UploadBeginResponse
+  type UploadBeginResponse,
+  type UploadCoverResponse
 } from '../../src/shared/api'
 import { isAuthorized } from './auth'
 import type { Env } from './env'
@@ -202,6 +206,29 @@ export function createApp(presign: Presigner, opts: AppOptions = {}): App {
     await env.BUCKET.delete(audioKey(id))
     await env.DB.prepare('DELETE FROM songs WHERE id = ?').bind(id).run()
     return { deleted: true }
+  }
+
+  async function uploadCover(env: Env, request: Request, url: URL): Promise<UploadCoverResponse> {
+    const type = (request.headers.get('Content-Type') ?? '').split(';')[0].trim().toLowerCase()
+    const ext = COVER_TYPES[type] ?? fail(400, 'Cover must be JPEG, PNG or WebP')
+    const body = await request.arrayBuffer()
+    if (body.byteLength === 0 || body.byteLength > MAX_COVER_BYTES) fail(400, 'Invalid cover size')
+    const rand = crypto.getRandomValues(new Uint8Array(16))
+    const name = `${btoa(String.fromCharCode(...rand)).replace(/\+/g, '-').replace(/\//g, '_').slice(0, 22)}.${ext}`
+    await env.BUCKET.put(`covers/${name}`, body, { httpMetadata: { contentType: type } })
+    return { coverUrl: `${url.origin}${API_PREFIX}/covers/${name}` }
+  }
+
+  /** Public (no token): only an exact random name gets anything back. */
+  async function getCover(env: Env, name: string): Promise<Response> {
+    const obj = COVER_NAME_RE.test(name) ? await env.BUCKET.get(`covers/${name}`) : null
+    if (!obj) return json({ error: 'Not found' }, 404)
+    return new Response(obj.body, {
+      headers: {
+        'Content-Type': obj.httpMetadata?.contentType ?? 'application/octet-stream',
+        'Cache-Control': 'public, max-age=31536000, immutable'
+      }
+    })
   }
 
   async function listPlaylists(env: Env): Promise<ListPlaylistsResponse> {
@@ -434,6 +461,7 @@ export function createApp(presign: Presigner, opts: AppOptions = {}): App {
     if (path === '/plays' && method === 'POST') return json(await addPlays(env, request))
     if (path === '/plays' && method === 'GET') return json(await listPlays(env))
     if (path === '/plays/ack' && method === 'POST') return json(await ackPlays(env, request))
+    if (path === '/covers' && method === 'POST') return json(await uploadCover(env, request, url))
     if (path === '/search' && method === 'GET') return json(await search(env, url))
     if (path === '/recommendations' && method === 'GET') return json(await getRecommendations(env))
     if (path === '/recommendations' && method === 'PUT') return json(await putRecommendations(env, request))
@@ -463,6 +491,8 @@ export function createApp(presign: Presigner, opts: AppOptions = {}): App {
 
   return {
     async fetch(request: Request, env: Env): Promise<Response> {
+      const cover = /^\/v1\/covers\/([^/]+)$/.exec(new URL(request.url).pathname)
+      if (cover && request.method === 'GET') return getCover(env, cover[1])
       // Auth before routing: an unauthenticated caller learns nothing, not
       // even which paths exist.
       if (!(await isAuthorized(request, env.API_TOKEN))) {

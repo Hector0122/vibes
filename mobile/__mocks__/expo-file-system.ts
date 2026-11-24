@@ -88,6 +88,11 @@ export class File {
       ? { canceled: false, result: mockPick.uris.map((u) => new File(u)) }
       : { canceled: true, result: null }
   }
+  /** '' like the native one when the system doesn't say. */
+  type = ''
+  async bytes(): Promise<Uint8Array> {
+    return Uint8Array.from(mockDisk.get(this.uri) ?? '', (c) => c.charCodeAt(0))
+  }
   async text(): Promise<string> {
     const v = mockDisk.get(this.uri)
     if (v === undefined) throw new Error('no such file')

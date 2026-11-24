@@ -70,6 +70,8 @@ interface Props {
   onSelectBook?: (name: string) => void
   /** Picks audio files on the phone and uploads them as a book. */
   onUploadBook?: () => void
+  /** Picks an image on the phone as the open book's cover. */
+  onBookCover?: () => void
   /** What the upload is doing; null when none runs. */
   upload?: string | null
   /** The big ▶ button's text (an audiobook: "Continuar"). */
@@ -533,6 +535,21 @@ export function LibraryScreen(p: Props): React.JSX.Element {
         )}
       </View>
       {downloadRow}
+      {openName === 'book' &&
+        (p.upload ? (
+          <View style={styles.progressRow}>
+            <ActivityIndicator size="small" color={colors.pink} />
+            <Text style={styles.progressText}>{p.upload}</Text>
+          </View>
+        ) : (
+          p.onBookCover &&
+          !p.offline && (
+            <Pressable style={styles.progressRow} onPress={p.onBookCover}>
+              <Ionicons name="image-outline" size={20} color={colors.pinkSoft} />
+              <Text style={styles.link}>Cambiar portada</Text>
+            </Pressable>
+          )
+        ))}
       {errorText}
     </View>
   ) : (

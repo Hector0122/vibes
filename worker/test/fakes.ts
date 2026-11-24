@@ -57,17 +57,21 @@ export function createFakeD1(): D1Database {
 
 export class FakeR2 {
   objects = new Map<string, string>()
+  types = new Map<string, string>()
 
   async head(key: string): Promise<{ size: number } | null> {
     const v = this.objects.get(key)
     return v === undefined ? null : { size: Buffer.byteLength(v) }
   }
-  async get(key: string): Promise<{ json(): Promise<unknown> } | null> {
+  async get(key: string): Promise<{ json(): Promise<unknown>; body: Uint8Array; httpMetadata: { contentType?: string } } | null> {
     const v = this.objects.get(key)
-    return v === undefined ? null : { json: async () => JSON.parse(v) }
+    return v === undefined
+      ? null
+      : { json: async () => JSON.parse(v), body: Buffer.from(v, 'latin1'), httpMetadata: { contentType: this.types.get(key) } }
   }
-  async put(key: string, value: string): Promise<void> {
-    this.objects.set(key, value)
+  async put(key: string, value: string | ArrayBuffer, opts?: { httpMetadata?: { contentType?: string } }): Promise<void> {
+    this.objects.set(key, typeof value === 'string' ? value : Buffer.from(value).toString('latin1'))
+    if (opts?.httpMetadata?.contentType) this.types.set(key, opts.httpMetadata.contentType)
   }
   async delete(keys: string | string[]): Promise<void> {
     for (const k of Array.isArray(keys) ? keys : [keys]) this.objects.delete(k)

@@ -63,6 +63,7 @@ let REQUESTS: Req[] = []
 /** Begun uploads (their request) and the songs committed after them (audiobook chapters). */
 let BEGUN = new Map<string, { meta: CloudSong; size: number; sha256: string }>()
 let UPLOADED: CloudSong[] = []
+let COVERS: { type: string | null; bytes: number }[] = []
 function fakeWorker(): void {
   globalThis.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
@@ -92,8 +93,19 @@ function fakeWorker(): void {
     if (url.endsWith('/v1/health')) return json({ ok: true })
     if (url.endsWith('/v1/songs')) return json({ songs: [...SONGS, ...UPLOADED] })
     const up = /\/v1\/songs\/([^/]+)\/(upload|commit)$/.exec(url)
+    if (url.endsWith('/v1/covers') && init?.method === 'POST') {
+      COVERS.push({ type: new Headers(init.headers).get('content-type'), bytes: (init.body as Uint8Array).length })
+      return json({ coverUrl: `https://worker.test/v1/covers/c${COVERS.length}.png` })
+    }
     if (up && up[2] === 'upload') {
-      BEGUN.set(up[1], JSON.parse(String(init?.body)))
+      const done = UPLOADED.findIndex((s) => s.id === up[1])
+      const req = JSON.parse(String(init?.body))
+      // Same file again: only the metadata changes, nothing to upload.
+      if (done >= 0) {
+        UPLOADED[done] = { ...UPLOADED[done], ...req.meta }
+        return json({ url: null, expiresAt: 0 })
+      }
+      BEGUN.set(up[1], req)
       return json({ url: `https://r2.test/PUT/${up[1]}`, expiresAt: 0 })
     }
     if (up) {
@@ -178,6 +190,7 @@ beforeEach(() => {
   REQUESTS = []
   BEGUN = new Map()
   UPLOADED = []
+  COVERS = []
   OPS = []
   online = true
   fakeWorker()
@@ -410,6 +423,31 @@ describe('with the cloud set up', () => {
     await fireEvent.press(await screen.findByText('Continuar'))
     await waitFor(() => expect(audio.mockPlaylist.seekTo).toHaveBeenLastCalledWith(95))
     expect(nowPlaying()).toBe('Dune - 02')
+
+    // Cambiar portada: the picked image goes to the cloud and every chapter shows it.
+    fs.mockDisk.set('content://dl/portada.png', 'PNGDATA')
+    fs.mockPick.uris = ['content://dl/portada.png']
+    await fireEvent.press(screen.getByLabelText('Volver'))
+    await fireEvent.press(screen.getByLabelText('Audiolibro: Dune'))
+    const putsBefore = fs.mockUploads.urls.length
+    await fireEvent.press(await screen.findByText('Cambiar portada'))
+    await waitFor(() => expect(UPLOADED.map((c) => c.coverUrl)).toEqual(Array(2).fill('https://worker.test/v1/covers/c1.png')))
+    expect(COVERS).toEqual([{ type: 'image/png', bytes: 7 }])
+    expect(fs.mockUploads.urls).toHaveLength(putsBefore) // the audio isn't sent again
+    expect(UPLOADED.map((c) => c.chapter)).toEqual([1, 2])
+    await waitFor(() =>
+      expect(screen.container.queryAll((n) => n.props.source?.uri === 'https://worker.test/v1/covers/c1.png').length).toBeGreaterThan(0)
+    )
+
+    // A chapter added later keeps the book's cover.
+    fs.mockDisk.set('content://dl/Dune%20-%2003.mp3', 'tercero')
+    fs.mockPick.uris = ['content://dl/Dune%20-%2003.mp3']
+    await fireEvent.press(screen.getByLabelText('Volver'))
+    await fireEvent.press(await screen.findByText('Subir audiolibro desde el teléfono'))
+    await fireEvent.press(screen.getByText('Guardar'))
+    await waitFor(() => expect(UPLOADED).toHaveLength(3))
+    expect(UPLOADED[2]).toMatchObject({ chapter: 3, coverUrl: 'https://worker.test/v1/covers/c1.png' })
+    await fireEvent.press(await screen.findByLabelText('Audiolibro: Dune'))
 
     // The music doesn't show the chapters.
     await fireEvent.press(screen.getByLabelText('Volver'))
