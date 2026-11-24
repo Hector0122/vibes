@@ -2,8 +2,8 @@
 // few minutes, downloads each marked song (the same path as "Agregar" in the
 // search), uploads it, and clears the mark. A song that can't be downloaded
 // stays marked as failed, with the reason, for the phone to show.
-import type { SongRequest } from '../../shared/api'
-import type { LocalSong } from '../../shared/types'
+import { YOUTUBE_ID_RE, type SongRequest } from '../../shared/api'
+import type { LocalSong, SearchResult } from '../../shared/types'
 import { CloudApiError, type CloudClient } from './client'
 
 export interface RequestRun {
@@ -37,4 +37,36 @@ export async function processRequests(
     }
   }
   return run
+}
+
+type Want = { title: string; artists: string; durationSec: number | null }
+
+/**
+ * Downloads a marked song. Found on Deezer ("dz" + its id, which can also be 11
+ * characters long): its YouTube upload. Marked from YouTube: that video, or, when
+ * it can't be downloaded (removed, blocked), another upload of the same song.
+ */
+export async function addRequested(
+  r: SongRequest,
+  add: (hit: SearchResult) => Promise<LocalSong>,
+  find: (want: Want) => Promise<SearchResult>
+): Promise<LocalSong> {
+  const fromVideo = (video: SearchResult | null): Promise<LocalSong> =>
+    add({
+      id: video?.id ?? r.id,
+      title: r.title,
+      artists: r.artists,
+      durationSec: video?.durationSec ?? r.durationSec,
+      coverUrl: r.coverUrl as string, // a null cover stays null
+      deezerId: r.deezerId
+    })
+  const isVideo = YOUTUBE_ID_RE.test(r.id) && !(r.deezerId && r.id === `dz${r.deezerId}`)
+  if (!isVideo) return fromVideo(await find(r))
+  try {
+    return await fromVideo(null)
+  } catch (err) {
+    const other = await find(r).catch(() => null)
+    if (!other || other.id === r.id) throw err
+    return fromVideo(other)
+  }
 }

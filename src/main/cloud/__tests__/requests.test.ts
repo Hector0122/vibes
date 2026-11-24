@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SongRequest } from '../../../shared/api'
-import type { LocalSong } from '../../../shared/types'
+import type { LocalSong, SearchResult } from '../../../shared/types'
 import { CloudApiError, type CloudClient } from '../client'
-import { processRequests } from '../requests'
+import { addRequested, processRequests } from '../requests'
 
 const req = (id: string, status: SongRequest['status'] = 'pending'): SongRequest => ({
   id,
@@ -47,5 +47,47 @@ describe('processRequests', () => {
       })
     } as unknown as CloudClient
     expect(await processRequests(c, vi.fn())).toEqual({ done: 0, failed: 0 })
+  })
+})
+
+describe('addRequested', () => {
+  const hit = (id: string): SearchResult => ({ id, title: 'Maggie May', artists: 'Rod Stewart', durationSec: 250, coverUrl: 'c' })
+  const added = (add: ReturnType<typeof vi.fn>) => add.mock.calls.map(([h]) => (h as SearchResult).id)
+
+  it('"dz" + a 9-digit Deezer id (11 characters, like a video id) is looked up on YouTube', async () => {
+    const add = vi.fn(async (h: SearchResult) => song(h.id, true))
+    const find = vi.fn(async () => hit('ytMaggie000'))
+    const r = { ...req('dz538646262'), deezerId: '538646262' }
+    expect((await addRequested(r, add, find)).id).toBe('ytMaggie000')
+    expect(added(add)).toEqual(['ytMaggie000'])
+    expect(add.mock.calls[0][0]).toMatchObject({ deezerId: '538646262', durationSec: 250 })
+  })
+
+  it('a YouTube video downloads as is', async () => {
+    const add = vi.fn(async (h: SearchResult) => song(h.id, true))
+    const find = vi.fn(async () => hit('other000000'))
+    await addRequested(req('aaaaaaaaaaa'), add, find)
+    expect(added(add)).toEqual(['aaaaaaaaaaa'])
+    expect(find).not.toHaveBeenCalled()
+  })
+
+  it('a video that is gone: another upload of the same song', async () => {
+    const add = vi.fn(async (h: SearchResult) => {
+      if (h.id === 'aaaaaaaaaaa') throw new Error('This video is unavailable')
+      return song(h.id, true)
+    })
+    expect((await addRequested(req('aaaaaaaaaaa'), add, async () => hit('other000000'))).id).toBe('other000000')
+    expect(added(add)).toEqual(['aaaaaaaaaaa', 'other000000'])
+  })
+
+  it('no other upload either: the original error, for the phone', async () => {
+    const add = vi.fn(async () => {
+      throw new Error('This video is unavailable')
+    })
+    const none = async (): Promise<SearchResult> => {
+      throw new Error('No encontré esta canción en YouTube')
+    }
+    await expect(addRequested(req('aaaaaaaaaaa'), add, none)).rejects.toThrow('This video is unavailable')
+    await expect(addRequested(req('aaaaaaaaaaa'), add, async () => hit('aaaaaaaaaaa'))).rejects.toThrow('unavailable')
   })
 })

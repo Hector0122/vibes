@@ -8,7 +8,7 @@ import { pullPlaylistOps } from './cloud/playlist-ops'
 import { createPlaylistSync } from './cloud/playlist-sync'
 import { toCloudRecommendations } from './cloud/recommendations'
 import { importPhonePlays } from './cloud/plays'
-import { processRequests } from './cloud/requests'
+import { addRequested, processRequests } from './cloud/requests'
 import { CloudSettingsStore } from './cloud/settings'
 import { startAudioServer } from './audio-server'
 import { Library } from './library'
@@ -179,18 +179,7 @@ async function main(): Promise<void> {
     const active = await settings.active()
     if (!active) return
     const client = new CloudClient({ baseUrl: active.url, token: active.token, retries: 1 })
-    const run = await processRequests(client, async (r) => {
-      // Marked from a YouTube suggestion: its id is the video. Found on Deezer: look for it on YouTube.
-      const video = YOUTUBE_ID_RE.test(r.id) ? null : await findOnYoutube(ctx.tools, r)
-      return add({
-        id: video?.id ?? r.id,
-        title: r.title,
-        artists: r.artists,
-        durationSec: video?.durationSec ?? r.durationSec,
-        coverUrl: r.coverUrl as string, // a null cover stays null
-        deezerId: r.deezerId
-      })
-    })
+    const run = await processRequests(client, (r) => addRequested(r, add, (want) => findOnYoutube(ctx.tools, want)))
     if (run.done || run.failed) console.log(`Canciones del celular: ${run.done} agregadas, ${run.failed} con error`)
     // Playlist edits from the phone: in, then our set goes back up.
     if (await pullPhoneEdits(client)) playlistSync.schedule()

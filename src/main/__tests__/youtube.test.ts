@@ -328,6 +328,27 @@ describe('pickYoutubeMatch (songs found on Deezer)', () => {
     expect(pickYoutubeMatch([r('karaoke0000', 'Feel Good Inc. (Karaoke)', 'Gorillaz', 222)], want)).toBeNull()
   })
 
+  it("Deezer's length is another edit: the artist's upload anyway, never an extended mix", async () => {
+    const { pickYoutubeMatch } = await import('../youtube')
+    // Real case: Deezer says 10:29 for "Long Cool Woman In A Black Dress"; YouTube's are ~3:18.
+    const lc = { title: 'Long Cool Woman In A Black Dress', artists: 'The Hollies', durationSec: 629 }
+    expect(
+      pickYoutubeMatch(
+        [
+          r('meow0000000', 'The Hollies ~ Long Cool Woman (In A Black Dress) 1972 Extended Meow Mix', 'DJDiscoCat', 418),
+          r('official000', 'The Hollies - Long Cool Woman (In a Black Dress) (Official Audio)', 'RHINO', 200),
+          r('karaoke0000', 'Long Cool Woman In A Black Dress (Karaoke)', 'The Hollies', 629)
+        ],
+        lc
+      )?.id
+    ).toBe('official000')
+    expect(pickYoutubeMatch([r('official000', 'Long Cool Woman (In a Black Dress)', 'The Hollies', 200)], lc)?.id).toBe(
+      'official000'
+    )
+    // Still nothing from someone else's upload that doesn't name the artist.
+    expect(pickYoutubeMatch([r('cover000000', 'Long Cool Woman In A Black Dress', 'Bar Band', 200)], lc)).toBeNull()
+  })
+
   it('a remix is fine when the remix is what was asked for; unknown duration is accepted', async () => {
     const { pickYoutubeMatch } = await import('../youtube')
     const rm = { title: 'Feel Good Inc. (Remix)', artists: 'Gorillaz', durationSec: 200 }

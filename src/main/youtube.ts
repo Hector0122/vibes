@@ -212,7 +212,7 @@ export async function radioFor(
 // download it: same title, a duration within a few seconds, and not a live /
 // cover / karaoke / sped-up version unless that's what was asked for.
 
-const VARIANT = /\b(live|en vivo|ao vivo|cover|karaoke|instrumental|remix|sped up|slowed|nightcore|8d|reverb)\b/i
+const VARIANT = /\b(live|en vivo|ao vivo|cover|karaoke|instrumental|remix|extended|sped up|slowed|nightcore|8d|reverb)\b/i
 const MAX_DURATION_GAP = 12
 const bare = (s: string): string => fold(s.replace(/\([^)]*\)|\[[^\]]*\]/g, ' '))
 
@@ -228,15 +228,16 @@ export function pickYoutubeMatch(
     const text = ` ${fold(`${r.title} ${r.artists}`)} `
     if (!text.includes(` ${title} `)) return false
     const variant = VARIANT.exec(r.title)?.[1]?.toLowerCase()
-    if (variant && variant !== wantedVariant) return false
-    if (want.durationSec != null && r.durationSec != null && Math.abs(r.durationSec - want.durationSec) > MAX_DURATION_GAP) {
-      return false
-    }
-    return true
+    return !variant || variant === wantedVariant
   })
+  const gap = (r: SearchResult): number =>
+    want.durationSec == null || r.durationSec == null ? 0 : Math.abs(r.durationSec - want.durationSec)
   // The artist's own upload first (its channel, or named in the title); otherwise YouTube's order.
-  const byArtist = ok.find((r) => !!artist && ` ${fold(`${r.artists} ${r.title}`)} `.includes(` ${artist} `))
-  return byArtist ?? (artist ? null : (ok[0] ?? null))
+  const pick = (list: SearchResult[]): SearchResult | null =>
+    list.find((r) => !!artist && ` ${fold(`${r.artists} ${r.title}`)} `.includes(` ${artist} `)) ??
+    (artist ? null : (list[0] ?? null))
+  // Same length first. Deezer's length is sometimes another edit: then the artist's upload anyway.
+  return pick(ok.filter((r) => gap(r) <= MAX_DURATION_GAP)) ?? pick(ok)
 }
 
 /** The YouTube upload of a song found on Deezer; throws when there's no good match. */
