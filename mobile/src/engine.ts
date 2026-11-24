@@ -25,6 +25,8 @@ import { recordPlay, setPlaysCloud } from './plays'
 /** Signed URLs last 15 min; after a long pause a streamed song gets a fresh one. */
 const STALE_AFTER_MS = 10 * 60_000
 const SAVE_EVERY_MS = 15_000
+/** How long a seek waits for the player to report the new spot (a long stream takes a moment). */
+export const SEEK_HOLD_MS = 4000
 
 export type Sleep = { at: number } | { endOfSong: true }
 
@@ -70,6 +72,8 @@ export class Engine {
   /** The current song isn't in the native list yet (restored from last time). */
   private needsLoad = false
   private resumeAt = 0
+  /** Right after a seek the player still reports the old spot for a moment: shown at the new one meanwhile. */
+  private seekingTo: { t: number; at: number } | null = null
   private lastSave = 0
   /** The token of the last song whose play was counted (once per time it plays). */
   private countedToken = 0
@@ -175,6 +179,7 @@ export class Engine {
   private async load(song: CloudSong, from = 0, autoplay = true): Promise<void> {
     const seq = ++this.loadSeq
     this.needsLoad = false
+    if (song.id !== this.state.current?.id) this.seekingTo = null // another song: nothing to wait for
     this.set({
       current: song,
       loading: true,
@@ -274,6 +279,7 @@ export class Engine {
       pl.remove(this.items.length - 1)
       this.items.pop()
     }
+    this.seekingTo = null
     this.set({ current: now.song, error: null, time: 0, duration: now.song.durationSec ?? 0 })
     pl.updateLockScreenMetadata(meta(now.song))
     if (forward && this.state.sleep && 'endOfSong' in this.state.sleep) {
@@ -300,9 +306,14 @@ export class Engine {
       this.countedToken = this.currentToken
       void recordPlay(cur.id, this.now()).catch(() => {})
     }
+    let time = s.currentTime
+    if (this.seekingTo) {
+      if (Math.abs(time - this.seekingTo.t) < 3 || this.now() - this.seekingTo.at > SEEK_HOLD_MS) this.seekingTo = null
+      else time = this.seekingTo.t
+    }
     this.set({
       playing: s.playing,
-      time: s.currentTime,
+      time,
       duration: s.duration || this.state.duration,
       error: s.error?.message ? 'No se pudo reproducir esta canción' : this.state.error
     })
@@ -430,8 +441,12 @@ export class Engine {
   }
 
   seek = (t: number): void => {
+    // Shown right away (and saved): when nothing is loaded yet, ▶ starts from there.
+    this.set({ time: t })
+    this.seekingTo = { t, at: this.now() }
     if (this.needsLoad) this.resumeAt = t
     else void this.pl?.seekTo(t)
+    this.save(true)
   }
 
   setShuffle = (on: boolean): void => {

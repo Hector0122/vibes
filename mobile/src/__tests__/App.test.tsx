@@ -204,6 +204,16 @@ beforeEach(() => {
   fakeWorker()
 })
 
+/** A one-finger touch at `pageX` (what PanResponder reads), with the given locationX. */
+function touch(locationX: number, pageX: number, timestamp: number) {
+  const t = { touchActive: true, startPageX: 20, startPageY: 300, startTimeStamp: 0, currentPageX: pageX, currentPageY: 300,
+    currentTimeStamp: timestamp, previousPageX: 20, previousPageY: 300, previousTimeStamp: 0 }
+  return {
+    nativeEvent: { locationX, pageX, pageY: 300, timestamp, touches: [{ pageX, pageY: 300 }], changedTouches: [] },
+    touchHistory: { numberActiveTouches: 1, indexOfSingleActiveTouch: 0, mostRecentTimeStamp: timestamp, touchBank: [t] }
+  }
+}
+
 const nowPlaying = (): string => screen.getByTestId('now-playing').props.children
 
 /** The app opens on Inicio: this goes to Biblioteca. */
@@ -287,12 +297,24 @@ describe('with the cloud set up', () => {
     // The bar: drag shows where it would land; letting go moves the song there.
     const bar = screen.getByTestId('seek-bar')
     await fireEvent(bar, 'layout', { nativeEvent: { layout: { width: 200 } } })
-    await fireEvent(bar, 'responderGrant', { nativeEvent: { locationX: 20 } })
-    await fireEvent(bar, 'responderMove', { nativeEvent: { locationX: 150 } })
+    const t0 = Date.now()
+    await fireEvent(bar, 'responderGrant', touch(20, 20, t0))
+    // Android's locationX jumps around while moving: the finger's travel (pageX) counts.
+    await fireEvent(bar, 'responderMove', touch(3, 150, t0 + 50))
     expect(screen.getByTestId('seek-time')).toHaveTextContent('2:30') // 3/4 of 200 s
     expect(audio.mockPlaylist.seekTo).not.toHaveBeenCalledWith(150)
-    await fireEvent(bar, 'responderRelease', { nativeEvent: { locationX: 150 } })
+    // The screen scrolls: it asks for the touch and must not get it.
+    expect(bar.props.onResponderTerminationRequest()).toBe(false)
+    // A long stream: the seek takes a moment to land.
+    audio.mockPlaylist.seekTo.mockImplementationOnce(async () => {})
+    await fireEvent(bar, 'responderRelease', touch(3, 150, t0 + 100))
     expect(audio.mockPlaylist.seekTo).toHaveBeenLastCalledWith(150)
+    // The player still reports the old spot for a moment: the bar doesn't jump back.
+    await act(() => audio.mockPlaylistStatus({ currentTime: 13 }))
+    expect(screen.getByTestId('seek-time')).toHaveTextContent('2:30')
+    await act(() => audio.mockPlaylistStatus({ currentTime: 150.4 }))
+    await act(() => audio.mockPlaylistStatus({ currentTime: 152 }))
+    expect(screen.getByTestId('seek-time')).toHaveTextContent('2:32') // then it follows the music
     await fireEvent.press(screen.getByLabelText('Cerrar'))
     expect(await screen.findByTestId('song-bbbbbbbbbbb')).toBeTruthy()
   })
