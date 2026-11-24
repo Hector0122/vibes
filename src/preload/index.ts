@@ -34,6 +34,9 @@ const api: VibesAPI = {
   deleteSongs: (ids) => ipcRenderer.invoke('songs:delete', ids),
   sendToVelody: (ids) => ipcRenderer.invoke('velody:send', ids),
   listVelodySends: () => ipcRenderer.invoke('velody:list'),
+  checkForUpdate: () => ipcRenderer.invoke('update:check'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  onUpdateProgress: (cb) => on('update-progress', cb),
   onSongsRemoved: (cb) => on('songs-removed', cb),
   onPlaylistsChanged: (cb) => on('playlists-changed', () => cb()),
   onProgress: (cb) => on('progress', cb)

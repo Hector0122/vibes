@@ -138,6 +138,11 @@ export interface VibesAPI {
   sendToVelody(ids: string[]): Promise<SendToVelodyResult>
   /** Ids of the songs sent to Velody and not imported there yet. */
   listVelodySends(): Promise<string[]>
+  /** A newer Vibes on GitHub (null: up to date, offline, or a build that can't update itself). */
+  checkForUpdate(): Promise<UpdateOffer | null>
+  /** Downloads and installs it (the system asks for the password), then restarts; an AppImage opens the page. */
+  installUpdate(): Promise<void>
+  onUpdateProgress(cb: (p: { stage: 'download'; percent: number } | { stage: 'install' }) => void): () => void
   /** Songs deleted (here or on the phone). */
   onSongsRemoved(cb: (ids: string[]) => void): () => void
   /** Playlists changed outside the window (edits from the phone). */
@@ -148,4 +153,10 @@ export interface VibesAPI {
 export interface SendToVelodyResult {
   sent: string[]
   skipped: { id: string; title: string; reason: string }[]
+}
+
+export interface UpdateOffer {
+  version: string
+  /** 'deb': installs in place; 'appimage': opens the release page to download it. */
+  mode: 'deb' | 'appimage'
 }

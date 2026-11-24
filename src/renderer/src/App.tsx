@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CloudSettingsView, LocalSong, Playlist, SearchResult, SongRef, TaskProgress } from '../../shared/types'
+import type { CloudSettingsView, LocalSong, Playlist, SearchResult, SongRef, TaskProgress, UpdateOffer } from '../../shared/types'
 import { CloudSettings } from './CloudSettings'
 import { Home } from './Home'
 import { CloudIcon, DownloadIcon, HomeIcon, ImportIcon, LibraryIcon, ListIcon, Logo, PlusIcon, UploadIcon } from './icons'
@@ -68,6 +68,8 @@ export default function App(): React.JSX.Element {
   const [showSettings, setShowSettings] = useState(false)
   const [cloud, setCloud] = useState<CloudSettingsView | null>(null)
   const [velodySent, setVelodySent] = useState<Set<string>>(new Set())
+  const [update, setUpdate] = useState<UpdateOffer | null>(null)
+  const [updating, setUpdating] = useState<string | null>(null) // "Descargando… 40 %" / "Instalando…"
   // 'home' | 'library' | 'playlist:<id>'
   const [view, setView] = useState<string>('home')
   const [playlists, setPlaylists] = useState<Playlist[]>([])
@@ -110,6 +112,17 @@ export default function App(): React.JSX.Element {
     await refreshVelody()
   }
 
+  async function applyUpdate(): Promise<void> {
+    setUpdating('Descargando… 0 %')
+    try {
+      await window.api.installUpdate() // the .deb build restarts on the new version from here
+      if (update?.mode === 'appimage') setUpdate(null)
+    } catch (err) {
+      setMessage(clean(err))
+    }
+    setUpdating(null)
+  }
+
   async function addToPlaylist(playlistId: string, songId: string): Promise<void> {
     const pl = playlists.find((x) => x.id === playlistId)
     try {
@@ -126,6 +139,10 @@ export default function App(): React.JSX.Element {
     refreshCloud()
     refreshPlaylists()
     void refreshVelody()
+    void window.api.checkForUpdate().then(setUpdate)
+    const offUpdate = window.api.onUpdateProgress((p) =>
+      setUpdating(p.stage === 'download' ? `Descargando… ${p.percent} %` : 'Instalando… (escribe tu contraseña en la ventana del sistema)')
+    )
     // A song that's new to the list (e.g. one marked on the phone) is added to it.
     const offSong = window.api.onSongUpdated((s) =>
       setSongs((prev) => (prev.some((p) => p.id === s.id) ? prev.map((p) => (p.id === s.id ? s : p)) : [...prev, s]))
@@ -134,6 +151,7 @@ export default function App(): React.JSX.Element {
     const offProgress = window.api.onProgress(setProgress)
     const offPlaylists = window.api.onPlaylistsChanged(() => void refreshPlaylists())
     return () => {
+      offUpdate()
       offSong()
       offRemoved()
       offProgress()
@@ -259,6 +277,23 @@ export default function App(): React.JSX.Element {
       data-accent={accent}
       style={{ '--accent': accent } as React.CSSProperties}
     >
+      {update && (
+        <div role="status" className="flex items-center gap-3 border-b border-white/5 bg-pink-500/10 px-4 py-2 text-sm">
+          <span className="flex-1">
+            {updating ?? `Hay una versión nueva de Vibes: ${update.version}`}
+          </span>
+          {!updating && (
+            <>
+              <button className="btn-accent h-8" onClick={() => void applyUpdate()}>
+                {update.mode === 'deb' ? 'Actualizar' : 'Descargar'}
+              </button>
+              <button className="btn h-8" onClick={() => setUpdate(null)}>
+                Después
+              </button>
+            </>
+          )}
+        </div>
+      )}
       {/* "stage": where the full-screen "Reproduciendo ahora" opens, above everything but the player. */}
       <div id="stage" className="relative flex min-h-0 flex-1">
         <aside className="flex w-60 shrink-0 flex-col gap-6 border-r border-white/5 bg-black/30 p-4">

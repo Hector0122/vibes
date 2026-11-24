@@ -10,6 +10,9 @@ import { toCloudRecommendations } from './cloud/recommendations'
 import { importPhonePlays } from './cloud/plays'
 import { addRequested, processRequests } from './cloud/requests'
 import { sendToVelody } from './cloud/velody'
+import { checkForUpdate, installMode, installUpdate, type DesktopUpdate, type UpdateProgress } from './updater'
+import { execFile } from 'child_process'
+import { tmpdir } from 'os'
 import { CloudSettingsStore } from './cloud/settings'
 import { startAudioServer } from './audio-server'
 import { Library } from './library'
@@ -45,7 +48,7 @@ const REQUESTS_EVERY_MS = 2 * 60_000
 /** And how often to refresh the phone's "Recomendado para ti" (also whenever Home loads them). */
 const RECOMMEND_EVERY_MS = 6 * 60 * 60_000
 
-function send(channel: string, payload: LocalSong | TaskProgress | string[] | null): void {
+function send(channel: string, payload: LocalSong | TaskProgress | UpdateProgress | string[] | null): void {
   win?.webContents.send(channel, payload)
 }
 
@@ -199,6 +202,29 @@ async function main(): Promise<void> {
     const active = await settings.active()
     const client = active ? new CloudClient({ baseUrl: active.url, token: active.token }) : null
     return forget(await deleteSongs(ctx, list, client))
+  })
+
+  // "Hay una versión nueva": GitHub's latest release; the .deb build installs it in place.
+  const mode = installMode({ isPackaged: app.isPackaged, execPath: process.execPath, appImage: process.env.APPIMAGE })
+  let offer: DesktopUpdate | null = null
+  ipcMain.handle('update:check', async () => {
+    if (mode === 'none') return null
+    offer = await checkForUpdate(app.getVersion())
+    return offer && { version: offer.version, mode }
+  })
+  ipcMain.handle('update:install', async () => {
+    if (!offer) throw new Error('No hay actualización pendiente')
+    if (mode === 'appimage') return void (await shell.openExternal(offer.pageUrl))
+    const run = (file: string, args: string[]): Promise<{ code: number | null; output: string }> =>
+      new Promise((resolve) =>
+        execFile(file, args, { timeout: 10 * 60_000, maxBuffer: 4 << 20 }, (err, stdout, stderr) =>
+          resolve({ code: err ? ((err as { code?: number }).code ?? 1) : 0, output: `${stdout}\n${stderr}` })
+        )
+      )
+    await installUpdate(offer, { tmpDir: tmpdir(), fetch, run }, (p) => send('update-progress', p))
+    // The new files are in /opt/Vibes now: start them.
+    app.relaunch()
+    app.exit(0)
   })
 
   // Vibes → Velody: the song waits in the cloud until Velody downloads and separates it.
