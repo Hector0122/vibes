@@ -1,0 +1,543 @@
+{
+ "metadata": {
+  "identifier": "don_quijote_vol1_0706_librivox",
+  "title": "Don Quijote, Volume 1",
+  "creator": "Miguel de Cervantes Saavedra",
+  "language": "spa"
+ },
+ "files": [
+  {
+   "name": "Don_Quijote_Vol1_1109.jpg",
+   "format": "JPEG",
+   "size": "108714"
+  },
+  {
+   "name": "Don_Quijote_Vol1_1109_thumb.jpg",
+   "format": "JPEG Thumb",
+   "size": "8934"
+  },
+  {
+   "name": "__ia_thumb.jpg",
+   "format": "Item Tile",
+   "size": "17836"
+  },
+  {
+   "name": "quijote_vol1_01_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "01: Tasa & El Rey",
+   "length": "420.36",
+   "size": "6725838"
+  },
+  {
+   "name": "quijote_vol1_01_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "01: Tasa & El Rey",
+   "length": "07:00",
+   "size": "3363026"
+  },
+  {
+   "name": "quijote_vol1_02_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "02: Dedication: Al Duque de Bejar & Prologo",
+   "length": "1670.78",
+   "size": "26732576"
+  },
+  {
+   "name": "quijote_vol1_02_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "02: Dedication: Al Duque de Bejar & Prologo",
+   "length": "27:50",
+   "size": "13366200"
+  },
+  {
+   "name": "quijote_vol1_03_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "03: Capitulo I-III",
+   "length": "2621.2",
+   "size": "41939278"
+  },
+  {
+   "name": "quijote_vol1_03_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "03: Capitulo I-III",
+   "length": "43:41",
+   "size": "20969348"
+  },
+  {
+   "name": "quijote_vol1_04_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "04: Capitulo IV-V",
+   "length": "2264.84",
+   "size": "36237472"
+  },
+  {
+   "name": "quijote_vol1_04_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "04: Capitulo IV-V",
+   "length": "37:44",
+   "size": "18118448"
+  },
+  {
+   "name": "quijote_vol1_05_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "05: Capitulo VI-VIII",
+   "length": "3497.6",
+   "size": "55961600"
+  },
+  {
+   "name": "quijote_vol1_05_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "05: Capitulo VI-VIII",
+   "length": "58:17",
+   "size": "27981031"
+  },
+  {
+   "name": "quijote_vol1_06a_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "06a: Capitulo IX-X",
+   "length": "1706.13",
+   "size": "27298094"
+  },
+  {
+   "name": "quijote_vol1_06a_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "06a: Capitulo IX-X",
+   "length": "28:26",
+   "size": "13649002"
+  },
+  {
+   "name": "quijote_vol1_06b_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "06b: Capitulo XI",
+   "length": "992.14",
+   "size": "15874350"
+  },
+  {
+   "name": "quijote_vol1_06b_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "06b: Capitulo XI",
+   "length": "16:32",
+   "size": "7937171"
+  },
+  {
+   "name": "quijote_vol1_06c_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "06c: Capitulo XII",
+   "length": "957.84",
+   "size": "15325518"
+  },
+  {
+   "name": "quijote_vol1_06c_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "06c: Capitulo XII",
+   "length": "15:57",
+   "size": "7662990"
+  },
+  {
+   "name": "quijote_vol1_06d_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "06d: Capitulo XIII",
+   "length": "1368.85",
+   "size": "21901614"
+  },
+  {
+   "name": "quijote_vol1_06d_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "06d: Capitulo XIII",
+   "length": "22:48",
+   "size": "10951075"
+  },
+  {
+   "name": "quijote_vol1_07_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "07: Capitulo XIV-XV",
+   "length": "2358.14",
+   "size": "37730304"
+  },
+  {
+   "name": "quijote_vol1_07_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "07: Capitulo XIV-XV",
+   "length": "39:18",
+   "size": "18864923"
+  },
+  {
+   "name": "quijote_vol1_08_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "08: Capitulo XVI-XVII",
+   "length": "2322.94",
+   "size": "37167104"
+  },
+  {
+   "name": "quijote_vol1_08_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "08: Capitulo XVI-XVII",
+   "length": "38:42",
+   "size": "18583846"
+  },
+  {
+   "name": "quijote_vol1_09a_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "09a: Capitulo XVIII-XIX",
+   "length": "2740.88",
+   "size": "43854158"
+  },
+  {
+   "name": "quijote_vol1_09a_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "09a: Capitulo XVIII-XIX",
+   "length": "45:40",
+   "size": "21927101"
+  },
+  {
+   "name": "quijote_vol1_09b_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "09b: Capitulo XX",
+   "length": "2075.13",
+   "size": "33202176"
+  },
+  {
+   "name": "quijote_vol1_09b_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "09b: Capitulo X",
+   "length": "34:35",
+   "size": "16600629"
+  },
+  {
+   "name": "quijote_vol1_09c_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "09c: Capitulo XXI-XXII",
+   "length": "3291.54",
+   "size": "52664654"
+  },
+  {
+   "name": "quijote_vol1_09c_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "09c: Capitulo XXI-XXII",
+   "length": "54:51",
+   "size": "26331764"
+  },
+  {
+   "name": "quijote_vol1_10_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "10: Capitulo XXIII",
+   "length": "1681.02",
+   "size": "26896384"
+  },
+  {
+   "name": "quijote_vol1_10_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "10: Capitulo XXIII",
+   "length": "28:01",
+   "size": "13448172"
+  },
+  {
+   "name": "quijote_vol1_11a_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "11a: Capitulo XXIV",
+   "length": "1297.4",
+   "size": "20758528"
+  },
+  {
+   "name": "quijote_vol1_11a_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "11a: Capitulo XXIV",
+   "length": "21:37",
+   "size": "10379516"
+  },
+  {
+   "name": "quijote_vol1_11b_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "11b: Capitulo XXV",
+   "length": "2418.3",
+   "size": "38692864"
+  },
+  {
+   "name": "quijote_vol1_11b_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "11b: Capitulo XXV",
+   "length": "40:18",
+   "size": "19345785"
+  },
+  {
+   "name": "quijote_vol1_11c_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "11c: Capitulo XXVI",
+   "length": "1234.92",
+   "size": "19758852"
+  },
+  {
+   "name": "quijote_vol1_11c_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "11c: Capitulo XXVI",
+   "length": "20:34",
+   "size": "9877756"
+  },
+  {
+   "name": "quijote_vol1_11d_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "11d: Capitulo XXVII",
+   "length": "2596.73",
+   "size": "41547776"
+  },
+  {
+   "name": "quijote_vol1_11d_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "11d: Capitulo XXVII",
+   "length": "43:16",
+   "size": "20773325"
+  },
+  {
+   "name": "quijote_vol1_12_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "12: Capitulo XXVIII",
+   "length": "2129.28",
+   "size": "34068480"
+  },
+  {
+   "name": "quijote_vol1_12_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "12: Capitulo XXVIII",
+   "length": "35:29",
+   "size": "17033844"
+  },
+  {
+   "name": "quijote_vol1_13_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "13: Capitulo XXIX",
+   "length": "1635.58",
+   "size": "26169344"
+  },
+  {
+   "name": "quijote_vol1_13_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "13: Capitulo XXIX",
+   "length": "27:15",
+   "size": "13084339"
+  },
+  {
+   "name": "quijote_vol1_14_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "14: Capitulo XXX-XXXII",
+   "length": "3023.1",
+   "size": "48369720"
+  },
+  {
+   "name": "quijote_vol1_14_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "14: Capitulo XXX-XXXII",
+   "length": "50:23",
+   "size": "24185126"
+  },
+  {
+   "name": "quijote_vol1_15a_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "15a: Capitulo XXXIII",
+   "length": "3200.91",
+   "size": "51214670"
+  },
+  {
+   "name": "quijote_vol1_15a_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "15a: Capitulo XXXIII",
+   "length": "53:20",
+   "size": "25607441"
+  },
+  {
+   "name": "quijote_vol1_15b_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "15b: Capitulo XXXIV",
+   "length": "3269.5",
+   "size": "52312064"
+  },
+  {
+   "name": "quijote_vol1_15b_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "15b: Capitulo XXXIV",
+   "length": "54:29",
+   "size": "26156012"
+  },
+  {
+   "name": "quijote_vol1_15c_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "15c: Capitulo XXXV",
+   "length": "1488.25",
+   "size": "23812096"
+  },
+  {
+   "name": "quijote_vol1_15c_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "15c: Capitulo XXXV",
+   "length": "24:48",
+   "size": "11905903"
+  },
+  {
+   "name": "quijote_vol1_15d_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "15d: Capitulo XXXVI",
+   "length": "1721.3",
+   "size": "27540802"
+  },
+  {
+   "name": "quijote_vol1_15d_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "15d: Capitulo XXXVI",
+   "length": "28:41",
+   "size": "13768747"
+  },
+  {
+   "name": "quijote_vol1_15e_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "15e: Capitulo XXXVII",
+   "length": "1878.15",
+   "size": "30050432"
+  },
+  {
+   "name": "quijote_vol1_15e_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "15e: Capitulo XXXVII",
+   "length": "31:18",
+   "size": "15024505"
+  },
+  {
+   "name": "quijote_vol1_15f_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "15f: Capitulo XXXVIII-XXXIX",
+   "length": "2177.28",
+   "size": "34836608"
+  },
+  {
+   "name": "quijote_vol1_15f_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "15f: Capitulo XXXVIII-XXXIX",
+   "length": "36:17",
+   "size": "17418367"
+  },
+  {
+   "name": "quijote_vol1_15g_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "15g: Capitulo XL",
+   "length": "2156.8",
+   "size": "34508800"
+  },
+  {
+   "name": "quijote_vol1_15g_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "15g: Capitulo XL",
+   "length": "35:56",
+   "size": "17254109"
+  },
+  {
+   "name": "quijote_vol1_16_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "16: Capitulo XLI",
+   "length": "2558.57",
+   "size": "40937262"
+  },
+  {
+   "name": "quijote_vol1_16_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "16: Capitulo XLI",
+   "length": "42:38",
+   "size": "20466961"
+  },
+  {
+   "name": "quijote_vol1_17a_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "17a: Capitulo XLII-XLIV",
+   "length": "3658",
+   "size": "58528078"
+  },
+  {
+   "name": "quijote_vol1_17a_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "17a: Capitulo XLII-XLIV",
+   "length": "60:58",
+   "size": "29264166"
+  },
+  {
+   "name": "quijote_vol1_17b_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "17b: Capitulo XLV-XLVI",
+   "length": "2523.41",
+   "size": "40374574"
+  },
+  {
+   "name": "quijote_vol1_17b_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "17b: Capitulo XLV-XLVI",
+   "length": "42:03",
+   "size": "20186928"
+  },
+  {
+   "name": "quijote_vol1_18a_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "18a: Capitulo XLVII",
+   "length": "1977.98",
+   "size": "31647744"
+  },
+  {
+   "name": "quijote_vol1_18a_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "18a: Capitulo XLVII",
+   "length": "32:57",
+   "size": "15823643"
+  },
+  {
+   "name": "quijote_vol1_18b_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "18b: Capitulo XLVIII",
+   "length": "1163.66",
+   "size": "18618660"
+  },
+  {
+   "name": "quijote_vol1_18b_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "18b: Capitulo XLVIII",
+   "length": "19:23",
+   "size": "9307660"
+  },
+  {
+   "name": "quijote_vol1_18c_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "18c: Capitulo XLIX",
+   "length": "1115",
+   "size": "17840128"
+  },
+  {
+   "name": "quijote_vol1_18c_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "18b: Capitulo XLIX",
+   "length": "18:35",
+   "size": "8920211"
+  },
+  {
+   "name": "quijote_vol1_19_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "19: Capitulo L",
+   "length": "922.88",
+   "size": "14766080"
+  },
+  {
+   "name": "quijote_vol1_19_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "19: Capitulo L",
+   "length": "15:22",
+   "size": "7382958"
+  },
+  {
+   "name": "quijote_vol1_20_cervantes.mp3",
+   "format": "VBR MP3",
+   "title": "20: Capitulo LI-LII",
+   "length": "2124.3",
+   "size": "33988942"
+  },
+  {
+   "name": "quijote_vol1_20_cervantes_64kb.mp3",
+   "format": "64Kbps MP3",
+   "title": "20: Capitulo LI-LII",
+   "length": "35:24",
+   "size": "16993929"
+  }
+ ]
+}

@@ -9,6 +9,7 @@ import {
   type PlaylistOp,
   type SongRequest
 } from '../src/shared/api'
+import { importBook, type LvBook } from './src/librivox'
 import { chaptersOf, groupBooks, guessBookName, isBook, setBookCover, uploadBook, type PickedFile } from './src/books'
 import { CloudError, createCloud, type Cloud } from './src/cloud'
 import { ActionSheet, type Action } from './src/components/ActionSheet'
@@ -36,6 +37,7 @@ import {
   type Section
 } from './src/screens/LibraryScreen'
 import { NowPlayingScreen } from './src/screens/NowPlayingScreen'
+import { BookSearchScreen } from './src/screens/BookSearchScreen'
 import { SearchScreen } from './src/screens/SearchScreen'
 import { SettingsScreen } from './src/screens/SettingsScreen'
 import { loadSettings, saveSettings, type CloudSettings } from './src/settings'
@@ -81,6 +83,7 @@ export default function App(): React.JSX.Element {
   const [book, setBook] = useState<string | null>(null)
   const [positions, setPositions] = useState<BookPositions>({})
   const [upload, setUpload] = useState<string | null>(null)
+  const [findingBook, setFindingBook] = useState(false)
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS)
 
   const cloud: Cloud | null = useMemo(() => {
@@ -288,6 +291,24 @@ export default function App(): React.JSX.Element {
       )
     } catch (e) {
       setError((e as Error).message)
+    } finally {
+      setUpload(null)
+      void refresh()
+    }
+  }
+  /** A LibriVox book comes into the cloud as `name`; again, it brings only the chapters missing. */
+  const fetchBook = async (name: string, lv: LvBook): Promise<void> => {
+    if (!cloud) return
+    setError(null)
+    setUpload('Preparando…')
+    try {
+      await importBook(cloud, lv, name, chaptersOf(songs, name), (u) =>
+        setUpload(
+          `${u.step === 'download' ? 'Bajando' : u.step === 'hash' ? 'Preparando' : 'Subiendo'} ${u.file} de ${u.total}${u.step === 'download' ? '' : ` · ${Math.round(u.fraction * 100)}%`}`
+        )
+      )
+    } catch (e) {
+      setError(`${(e as Error).message}. Vuelve a agregarlo para seguir donde se quedó.`)
     } finally {
       setUpload(null)
       void refresh()
@@ -533,6 +554,19 @@ export default function App(): React.JSX.Element {
       <StatusBar style="light" />
       {nowOpen && player.current ? (
         <NowPlayingScreen player={player} onClose={() => setNowOpen(false)} />
+      ) : findingBook && cloud ? (
+        <BookSearchScreen
+          onClose={() => setFindingBook(false)}
+          onPick={(lv) => {
+            setFindingBook(false)
+            setNaming({
+              title: 'Nombre del audiolibro',
+              placeholder: 'Nombre del libro',
+              initial: lv.title,
+              save: (name) => void fetchBook(name, lv)
+            })
+          }}
+        />
       ) : tab === 'search' && cloud ? (
         <SearchScreen
           cloud={cloud}
@@ -583,6 +617,7 @@ export default function App(): React.JSX.Element {
           book={book}
           onSelectBook={openBook}
           onUploadBook={cloud ? () => void pickBook() : undefined}
+          onFindBook={cloud ? () => setFindingBook(true) : undefined}
           onBookCover={cloud && book ? () => void pickCover(book) : undefined}
           upload={upload}
           onShuffleAll={(visible) => {

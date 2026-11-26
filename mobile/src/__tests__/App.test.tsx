@@ -84,6 +84,23 @@ function fakeWorker(): void {
         ]
       } as Response
     }
+    // archive.org (LibriVox): the search, and a two-chapter book.
+    if (url.startsWith('https://archive.org/advancedsearch.php')) {
+      return { ok: true, status: 200, json: async () => ({ response: { docs: [
+        { identifier: 'platero_librivox', title: 'Platero y yo', creator: 'Juan Ramón Jiménez', runtime: '0:20:00' }
+      ] } }) } as Response
+    }
+    if (url === 'https://archive.org/metadata/platero_librivox') {
+      return { ok: true, status: 200, json: async () => ({
+        metadata: { identifier: 'platero_librivox', title: 'Platero y yo', creator: 'Juan Ramón Jiménez' },
+        files: [
+          { name: 'platero_02_64kb.mp3', format: '64Kbps MP3', title: '02: Blanco', length: '09:30', size: '4000000' },
+          { name: 'platero_01_64kb.mp3', format: '64Kbps MP3', title: '01: Platero', length: '10:30', size: '5000000' },
+          { name: 'platero_01_vbr.mp3', format: 'VBR MP3', title: '01: Platero' },
+          { name: 'platero.jpg', format: 'JPEG' }
+        ]
+      }) } as Response
+    }
     if (url.startsWith('https://api.github.com/'))
       return { ok: false, status: 404, json: async () => ({}) } as Response
     requests.push(url)
@@ -501,6 +518,44 @@ describe('with the cloud set up', () => {
     await fireEvent.press(screen.getByText('Canciones'))
     expect(screen.getByTestId('count')).toHaveTextContent('3 canciones en tu nube')
     expect(screen.queryByTestId(`song-${UPLOADED[0].id}`)).toBeNull()
+  })
+
+  it('LibriVox: search, accept the size, name it: the chapters come into the cloud in order, with the cover, and play', async () => {
+    const alert = jest.spyOn(Alert, 'alert')
+    await renderLibrary()
+    await fireEvent.press(await screen.findByText('Libros'))
+    await fireEvent.press(await screen.findByText('Buscar audiolibros gratis (LibriVox)'))
+    await fireEvent.changeText(screen.getByTestId('book-search'), 'platero')
+    await fireEvent(screen.getByTestId('book-search'), 'submitEditing')
+    await fireEvent.press(await screen.findByLabelText('Audiolibro: Platero y yo'))
+
+    // Asks first, with what it weighs.
+    await waitFor(() => expect(alert).toHaveBeenCalled())
+    const [title, body, buttons] = alert.mock.calls.at(-1)!
+    expect(title).toBe('Platero y yo')
+    expect(body).toContain('2 capítulos')
+    expect(body).toContain('≈ 9 MB')
+    await act(() => buttons!.find((b) => b.text === 'Agregar')!.onPress!())
+    expect(await screen.findByDisplayValue('Platero y yo')).toBeTruthy()
+    await fireEvent.press(screen.getByText('Guardar'))
+
+    await waitFor(() => expect(UPLOADED).toHaveLength(2))
+    expect(UPLOADED.map((c) => [c.title, c.book, c.chapter, c.durationSec, c.coverUrl])).toEqual([
+      ['Platero', 'Platero y yo', 1, 630, 'https://worker.test/v1/covers/c1.png'],
+      ['Blanco', 'Platero y yo', 2, 570, 'https://worker.test/v1/covers/c1.png']
+    ])
+    expect(fs.mockDownloads.urls).toEqual([
+      'https://archive.org/download/platero_librivox/platero.jpg',
+      'https://archive.org/download/platero_librivox/platero_01_64kb.mp3',
+      'https://archive.org/download/platero_librivox/platero_02_64kb.mp3'
+    ])
+    expect(fs.mockUploads.urls).toEqual(UPLOADED.map((c) => `https://r2.test/PUT/${c.id}`))
+
+    // It shows in Libros and plays from chapter 1.
+    await fireEvent.press(await screen.findByLabelText('Audiolibro: Platero y yo'))
+    await fireEvent.press(await screen.findByText('Reproducir'))
+    await waitFor(() => expect(nowPlaying()).toBe('Platero'))
+    alert.mockRestore()
   })
 
   it('Inicio: tap an artist and only their songs show; Biblioteca sorts A–Z with letters', async () => {

@@ -70,6 +70,8 @@ interface Props {
   onSelectBook?: (name: string) => void
   /** Picks audio files on the phone and uploads them as a book. */
   onUploadBook?: () => void
+  /** Find a free audiobook on LibriVox. */
+  onFindBook?: () => void
   /** Picks an image on the phone as the open book's cover. */
   onBookCover?: () => void
   /** What the upload is doing; null when none runs. */
@@ -364,12 +366,21 @@ export function LibraryScreen(p: Props): React.JSX.Element {
                 </Text>
               </View>
             ) : (
-              p.onUploadBook &&
               !p.offline && (
-                <Pressable style={styles.progressRow} onPress={p.onUploadBook}>
-                  <Ionicons name="cloud-upload-outline" size={20} color={colors.pinkSoft} />
-                  <Text style={styles.link}>Subir audiolibro desde el teléfono</Text>
-                </Pressable>
+                <>
+                  {p.onUploadBook && (
+                    <Pressable style={styles.progressRow} onPress={p.onUploadBook}>
+                      <Ionicons name="cloud-upload-outline" size={20} color={colors.pinkSoft} />
+                      <Text style={styles.link}>Subir audiolibro desde el teléfono</Text>
+                    </Pressable>
+                  )}
+                  {p.onFindBook && (
+                    <Pressable style={styles.progressRow} onPress={p.onFindBook}>
+                      <Ionicons name="search" size={20} color={colors.pinkSoft} />
+                      <Text style={styles.link}>Buscar audiolibros gratis (LibriVox)</Text>
+                    </Pressable>
+                  )}
+                </>
               )
             )}
             {errorText}

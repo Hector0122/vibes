@@ -67,7 +67,7 @@ export interface UploadProgress {
   /** Chapter being uploaded (1-based) of `total`. */
   file: number
   total: number
-  step: 'hash' | 'upload'
+  step: 'download' | 'hash' | 'upload'
   /** 0–1 within this file. */
   fraction: number
 }
@@ -89,45 +89,67 @@ export async function uploadBook(
     a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
   )
   for (const [i, picked] of sorted.entries()) {
-    const file = new File(picked.uri)
-    const size = file.size
-    const report = (step: UploadProgress['step'], fraction: number): void =>
-      onProgress({ file: i + 1, total: sorted.length, step, fraction })
-    const sha256 = await sha256File(file, (done) => report('hash', size ? done / size : 1))
-    const id = newId()
-    const { url } = await cloud.beginUpload(id, {
-      meta: {
-        title: chapterTitle(picked.name),
-        artists: book,
-        album: book,
-        deezerId: null,
-        deezerArtistId: null,
-        isrc: null,
-        durationSec: null,
-        coverUrl,
-        book,
-        chapter: existing + i + 1
-      },
-      size,
-      sha256
-    })
-    if (url) {
-      const task = file.createUploadTask(url, {
-        httpMethod: 'PUT',
-        uploadType: UploadType.BINARY_CONTENT
-      })
-      const sub = task.addListener('progress', (p) =>
-        report('upload', p.totalBytes ? p.bytesSent / p.totalBytes : 0)
-      )
-      try {
-        const res = await task.uploadAsync()
-        if (res.status < 200 || res.status >= 300) {
-          throw new Error(`No se pudo subir "${picked.name}" (${res.status})`)
-        }
-      } finally {
-        sub.remove()
-      }
-    }
-    await cloud.commit(id)
+    await uploadChapter(
+      cloud,
+      new File(picked.uri),
+      { title: chapterTitle(picked.name), durationSec: null, book, chapter: existing + i + 1, coverUrl },
+      (step, fraction) => onProgress({ file: i + 1, total: sorted.length, step, fraction }),
+      picked.name
+    )
   }
+}
+
+export interface ChapterMeta {
+  title: string
+  durationSec: number | null
+  book: string
+  chapter: number
+  coverUrl: string | null
+}
+
+/** One audio file up as a book's chapter: straight to storage, then the cloud lists it. */
+export async function uploadChapter(
+  cloud: Cloud,
+  file: File,
+  ch: ChapterMeta,
+  report: (step: 'hash' | 'upload', fraction: number) => void,
+  label = ch.title
+): Promise<void> {
+  const size = file.size
+  const sha256 = await sha256File(file, (done) => report('hash', size ? done / size : 1))
+  const id = newId()
+  const { url } = await cloud.beginUpload(id, {
+    meta: {
+      title: ch.title,
+      artists: ch.book,
+      album: ch.book,
+      deezerId: null,
+      deezerArtistId: null,
+      isrc: null,
+      durationSec: ch.durationSec,
+      coverUrl: ch.coverUrl,
+      book: ch.book,
+      chapter: ch.chapter
+    },
+    size,
+    sha256
+  })
+  if (url) {
+    const task = file.createUploadTask(url, {
+      httpMethod: 'PUT',
+      uploadType: UploadType.BINARY_CONTENT
+    })
+    const sub = task.addListener('progress', (p) =>
+      report('upload', p.totalBytes ? p.bytesSent / p.totalBytes : 0)
+    )
+    try {
+      const res = await task.uploadAsync()
+      if (res.status < 200 || res.status >= 300) {
+        throw new Error(`No se pudo subir "${label}" (${res.status})`)
+      }
+    } finally {
+      sub.remove()
+    }
+  }
+  await cloud.commit(id)
 }

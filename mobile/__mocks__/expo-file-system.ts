@@ -121,5 +121,6 @@ export class File {
 
 export const Paths = {
   document: new Directory('file:///docs'),
+  cache: new Directory('file:///cache'),
   availableDiskSpace: 10_000_000_000
 }
