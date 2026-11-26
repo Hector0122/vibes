@@ -143,6 +143,18 @@ it('keeps going song after song on its own (shuffle, screen off)', async () => {
   expect(e.state.current?.id).toBe(audio.mockPlaylist.uris[audio.mockPlaylist.currentIndex].match(/songs\/(\w+)\./)![1])
 })
 
+it('started from the widget, it keeps going after the app opens with an empty list', async () => {
+  await e.play(A.id)
+  await flush()
+  e.setQueue([]) // the app mounts: its list starts empty
+  audio.mockPlaylistFinish() // on to B (already queued)
+  await flush()
+  audio.mockPlaylistFinish() // B ends: C must follow
+  await flush()
+  expect(e.state.current?.id).toBe(C.id)
+  expect(audio.mockPlaylist.played.at(-1)).toContain(C.id)
+})
+
 it('the next song could not be queued (no link at the time): it is picked when the song ends', async () => {
   fs.mockDisk.delete(`file:///docs/vibes/songs/${B.id}.m4a`) // not downloaded, and no cloud yet
   await e.play(A.id)

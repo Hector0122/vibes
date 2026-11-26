@@ -112,7 +112,8 @@ export class Engine {
 
   /** The list "next" and "previous" walk through (what the screen shows). */
   setQueue(songs: CloudSong[]): void {
-    this.queue = songs
+    // An empty list (the app just opened, a search with no results) would leave nothing to play next.
+    if (songs.length) this.queue = songs
   }
 
   getQueue(): CloudSong[] {
