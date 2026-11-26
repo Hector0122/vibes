@@ -34,7 +34,7 @@ export function PlayerBar({
             {s.title}
           </Text>
           <Text
-            numberOfLines={1}
+            numberOfLines={player.error ? 4 : 1}
             style={[styles.artist, player.error ? { color: colors.red } : null]}
           >
             {player.error ?? s.artists}

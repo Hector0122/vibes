@@ -1,0 +1,30 @@
+diff --git a/android/src/main/AndroidManifest.xml b/android/src/main/AndroidManifest.xml
+index 36a19f2d9c4a979a940ab681a1fb844ce45f7c75..52db4ef31acd30dfa55977f630f4b895f97d606c 100644
+--- a/android/src/main/AndroidManifest.xml
++++ b/android/src/main/AndroidManifest.xml
+@@ -1,3 +1,4 @@
+ <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+   <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
++  <uses-permission android:name="android.permission.WAKE_LOCK" />
+ </manifest>
+diff --git a/android/src/main/java/expo/modules/audio/AudioPlaylist.kt b/android/src/main/java/expo/modules/audio/AudioPlaylist.kt
+index bf3f9c5e5535ddf5e98484310642aa73bd6ae86c..47279542919c72d23b812fd74e0950d53abe94e0 100644
+--- a/android/src/main/java/expo/modules/audio/AudioPlaylist.kt
++++ b/android/src/main/java/expo/modules/audio/AudioPlaylist.kt
+@@ -2,6 +2,7 @@ package expo.modules.audio
+ 
+ import android.content.Context
+ import androidx.media3.common.AudioAttributes
++import androidx.media3.common.C
+ import androidx.media3.common.MediaItem
+ import androidx.media3.common.PlaybackException
+ import androidx.media3.common.Player
+@@ -29,6 +30,8 @@ class AudioPlaylist(
+     .setLooper(context.mainLooper)
+     .setAudioAttributes(AudioAttributes.DEFAULT, false)
+     .setHandleAudioBecomingNoisy(true)
++    // Vibes: keep the CPU (and Wi-Fi) awake while playing, or Android stalls the next song with the screen off.
++    .setWakeMode(C.WAKE_MODE_NETWORK)
+     .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(dataSourceFactory))
+     .build(),
+   appContext = appContext,
