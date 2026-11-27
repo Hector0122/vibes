@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { useCallback, useEffect, useState } from 'react'
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Image,
   Pressable,
@@ -13,7 +14,15 @@ import {
 } from 'react-native'
 import type { Podcast, PodcastEpisode } from '../../../src/shared/api'
 import type { Cloud } from '../cloud'
-import { loadEpisodePositions, type EpisodePositions } from '../offline'
+import { onWifi } from '../network'
+import {
+  deleteEpisode,
+  downloadEpisode,
+  loadEpisodePositions,
+  loadSavedEpisodes,
+  type EpisodePositions,
+  type SavedEpisode
+} from '../offline'
 import {
   episodeProgress,
   episodeSong,
@@ -26,7 +35,8 @@ import {
 import { colors } from '../theme'
 
 interface Props {
-  cloud: Cloud
+  /** null without internet: only the downloaded episodes. */
+  cloud: Cloud | null
   /** The song or episode playing (to mark it), and whether it plays (positions move). */
   currentId: string | null
   playing: boolean
@@ -45,9 +55,12 @@ export function PodcastsScreen({ cloud, currentId, playing, onPlay }: Props): Re
   const [show, setShow] = useState<Podcast | null>(null)
   /** Agregar podcast: the search, from the ➕. */
   const [adding, setAdding] = useState(false)
+  const dl = useEpisodeDownloads()
+  const [showDownloads, setShowDownloads] = useState(false)
 
   const loadSubs = useCallback(async (): Promise<void> => {
     setError(null)
+    if (!cloud) return setSubs([])
     try {
       setSubs(await cloud.listPodcastSubscriptions())
     } catch (e) {
@@ -61,7 +74,7 @@ export function PodcastsScreen({ cloud, currentId, playing, onPlay }: Props): Re
   }, [loadSubs])
 
   async function search(): Promise<void> {
-    if (!query.trim()) return
+    if (!query.trim() || !cloud) return
     setBusy(true)
     setError(null)
     try {
@@ -77,6 +90,7 @@ export function PodcastsScreen({ cloud, currentId, playing, onPlay }: Props): Re
 
   async function toggleSub(p: Podcast): Promise<void> {
     setError(null)
+    if (!cloud) return
     try {
       setSubs(
         subscribed(p.id) ? await cloud.unsubscribePodcast(p.id) : await cloud.subscribePodcast(p)
@@ -86,9 +100,24 @@ export function PodcastsScreen({ cloud, currentId, playing, onPlay }: Props): Re
     }
   }
 
+  // Without internet only what's on the phone can play.
+  if (!cloud || showDownloads) {
+    return (
+      <DownloadsScreen
+        dl={dl}
+        offline={!cloud}
+        onClose={() => setShowDownloads(false)}
+        currentId={currentId}
+        playing={playing}
+        onPlay={onPlay}
+      />
+    )
+  }
+
   if (show) {
     return (
       <ShowScreen
+        dl={dl}
         cloud={cloud}
         show={show}
         subscribed={subscribed(show.id)}
@@ -217,6 +246,18 @@ export function PodcastsScreen({ cloud, currentId, playing, onPlay }: Props): Re
               {error}
             </Text>
           )}
+          {dl.saved.length > 0 && (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setShowDownloads(true)}
+              style={({ pressed }) => [styles.downloadsRow, pressed && { opacity: 0.6 }]}
+            >
+              <Ionicons name="download" size={20} color={colors.pinkSoft} />
+              <Text style={styles.rowTitle}>
+                Descargados · {dl.saved.length === 1 ? '1 episodio' : `${dl.saved.length} episodios`}
+              </Text>
+            </Pressable>
+          )}
         </View>
       }
       ListEmptyComponent={
@@ -280,6 +321,7 @@ function Cover({ uri, size = 52 }: { uri: string | null; size?: number }): React
 
 /** A show: subscribe, and its episodes (newest first), each where it was left. */
 function ShowScreen(props: {
+  dl: EpisodeDownloads
   cloud: Cloud
   show: Podcast
   subscribed: boolean
@@ -293,7 +335,6 @@ function ShowScreen(props: {
   const [episodes, setEpisodes] = useState<PodcastEpisode[] | null>(null)
   const [positions, setPositions] = useState<EpisodePositions>({})
   const [error, setError] = useState<string | null>(null)
-  const [open, setOpen] = useState<string | null>(null)
 
   const load = useCallback(async (): Promise<void> => {
     setError(null)
@@ -353,7 +394,7 @@ function ShowScreen(props: {
                 </Pressable>
               </View>
             </View>
-            {error && <Text style={styles.error}>{error}</Text>}
+            {(error ?? props.dl.error) && <Text style={styles.error}>{error ?? props.dl.error}</Text>}
           </View>
         }
         ListEmptyComponent={
@@ -363,60 +404,196 @@ function ShowScreen(props: {
             <Text style={styles.empty}>Este podcast no tiene episodios para escuchar.</Text>
           )
         }
-        renderItem={({ item: ep }) => {
-          const id = episodeSongId(ep.id)
-          const on = currentId === id
-          const prog = episodeProgress(ep, positions)
-          const info = [
-            published(ep.publishedAt),
-            prog && 'heard' in prog
-              ? 'Escuchado'
-              : prog && prog.left > 0
-                ? `Quedan ${length(prog.left) || '1 min'}`
-                : length(ep.durationSec)
-          ]
-            .filter(Boolean)
-            .join(' · ')
-          return (
-            <View style={styles.episode}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Episodio: ${ep.title}`}
-                onPress={() => props.onPlay(episodeSong(ep, show), startAt(ep, positions))}
-                onLongPress={() => setOpen(open === ep.id ? null : ep.id)}
-                style={({ pressed }) => [styles.episodeMain, pressed && { opacity: 0.6 }]}
-              >
-                <View style={styles.text}>
-                  <Text
-                    numberOfLines={2}
-                    style={[
-                      styles.rowTitle,
-                      on && { color: colors.pinkSoft },
-                      prog && 'heard' in prog && { color: colors.muted }
-                    ]}
-                  >
-                    {ep.title}
-                  </Text>
-                  <Text style={styles.sub}>{info}</Text>
-                </View>
-                <Ionicons
-                  name={on && playing ? 'volume-high' : 'play-circle'}
-                  size={30}
-                  color={on ? colors.pinkSoft : colors.text}
-                />
-              </Pressable>
-              {!!ep.description && (
-                <Pressable onPress={() => setOpen(open === ep.id ? null : ep.id)} hitSlop={6}>
-                  <Text numberOfLines={open === ep.id ? undefined : 2} style={styles.notes}>
-                    {ep.description}
-                  </Text>
-                </Pressable>
-              )}
-            </View>
-          )
-        }}
+        renderItem={({ item: ep }) => (
+          <EpisodeRow
+            ep={ep}
+            show={show}
+            positions={positions}
+            currentId={currentId}
+            playing={playing}
+            onPlay={props.onPlay}
+            dl={props.dl}
+          />
+        )}
       />
     </View>
+  )
+}
+
+type EpisodeDownloads = ReturnType<typeof useEpisodeDownloads>
+
+/** Episodes on the phone: the list, the ones downloading, and download / remove (asking first). */
+function useEpisodeDownloads() {
+  const [saved, setSaved] = useState<SavedEpisode[]>([])
+  const [busy, setBusy] = useState<string[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const reload = useCallback(() => void loadSavedEpisodes().then(setSaved, () => {}), [])
+  useEffect(reload, [reload])
+
+  const run = async (ep: PodcastEpisode, show: Podcast): Promise<void> => {
+    setError(null)
+    setBusy((b) => [...b, ep.id])
+    try {
+      await downloadEpisode(ep, show, Date.now())
+    } catch (e) {
+      setError(`No se pudo descargar «${ep.title}»: ${(e as Error).message}`)
+    } finally {
+      setBusy((b) => b.filter((x) => x !== ep.id))
+      reload()
+    }
+  }
+
+  return {
+    saved,
+    error,
+    isSaved: (id: string): boolean => saved.some((x) => x.episode.id === id),
+    isBusy: (id: string): boolean => busy.includes(id),
+    /** An hour of podcast is ~50 MB: on mobile data, ask first. */
+    download: async (ep: PodcastEpisode, show: Podcast): Promise<void> => {
+      if (await onWifi()) return run(ep, show)
+      Alert.alert('Estás usando datos móviles', '¿Descargar el episodio de todos modos? Puede gastar tu plan de datos.', [
+        { text: 'Esperar a Wi-Fi', style: 'cancel' },
+        { text: 'Descargar', onPress: () => void run(ep, show) }
+      ])
+    },
+    remove: (ep: PodcastEpisode): void =>
+      Alert.alert('Quitar del teléfono', `«${ep.title}» se podrá seguir escuchando con internet.`, [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Quitar', style: 'destructive', onPress: () => void deleteEpisode(ep.id).then(reload) }
+      ])
+  }
+}
+
+/** One episode: play it (where it was left), its notes, and ⬇ / ✓ to keep it on the phone. */
+function EpisodeRow(props: {
+  ep: PodcastEpisode
+  show: Podcast
+  positions: EpisodePositions
+  currentId: string | null
+  playing: boolean
+  onPlay: (episode: EpisodeSong, from: number) => void
+  dl: EpisodeDownloads
+  /** In Descargados: the show's name under the title. */
+  withShow?: boolean
+}): React.JSX.Element {
+  const { ep, show, positions, currentId, playing, dl } = props
+  const [open, setOpen] = useState(false)
+  const on = currentId === episodeSongId(ep.id)
+  const prog = episodeProgress(ep, positions)
+  const info = [
+    props.withShow ? show.title : '',
+    published(ep.publishedAt),
+    prog && 'heard' in prog
+      ? 'Escuchado'
+      : prog && prog.left > 0
+        ? `Quedan ${length(prog.left) || '1 min'}`
+        : length(ep.durationSec)
+  ]
+    .filter(Boolean)
+    .join(' · ')
+  return (
+    <View style={styles.episode}>
+      <View style={styles.episodeMain}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Episodio: ${ep.title}`}
+          onPress={() => props.onPlay(episodeSong(ep, show), startAt(ep, positions))}
+          onLongPress={() => setOpen(!open)}
+          style={({ pressed }) => [styles.episodeMain, { flex: 1 }, pressed && { opacity: 0.6 }]}
+        >
+          <View style={styles.text}>
+            <Text
+              numberOfLines={2}
+              style={[
+                styles.rowTitle,
+                on && { color: colors.pinkSoft },
+                prog && 'heard' in prog && { color: colors.muted }
+              ]}
+            >
+              {ep.title}
+            </Text>
+            <Text style={styles.sub}>{info}</Text>
+          </View>
+          <Ionicons
+            name={on && playing ? 'volume-high' : 'play-circle'}
+            size={30}
+            color={on ? colors.pinkSoft : colors.text}
+          />
+        </Pressable>
+        {dl.isBusy(ep.id) ? (
+          <ActivityIndicator testID={`episode-downloading-${ep.id}`} size="small" color={colors.pink} />
+        ) : dl.isSaved(ep.id) ? (
+          <Pressable accessibilityLabel={`Quitar del teléfono: ${ep.title}`} onPress={() => dl.remove(ep)} hitSlop={8}>
+            <Ionicons name="checkmark-circle" size={24} color={colors.pinkSoft} />
+          </Pressable>
+        ) : (
+          <Pressable accessibilityLabel={`Descargar: ${ep.title}`} onPress={() => void dl.download(ep, show)} hitSlop={8}>
+            <Ionicons name="arrow-down-circle-outline" size={24} color={colors.muted} />
+          </Pressable>
+        )}
+      </View>
+      {!!ep.description && (
+        <Pressable onPress={() => setOpen(!open)} hitSlop={6}>
+          <Text numberOfLines={open ? undefined : 2} style={styles.notes}>
+            {ep.description}
+          </Text>
+        </Pressable>
+      )}
+    </View>
+  )
+}
+
+/** The episodes on the phone, from every show: what plays without internet. */
+function DownloadsScreen(props: {
+  dl: EpisodeDownloads
+  offline: boolean
+  onClose: () => void
+  currentId: string | null
+  playing: boolean
+  onPlay: (episode: EpisodeSong, from: number) => void
+}): React.JSX.Element {
+  const { dl, currentId, playing } = props
+  const [positions, setPositions] = useState<EpisodePositions>({})
+  useEffect(() => {
+    void loadEpisodePositions().then(setPositions, () => {})
+  }, [currentId, playing])
+  return (
+    <FlatList
+      style={styles.root}
+      data={dl.saved}
+      keyExtractor={(x) => x.episode.id}
+      ListHeaderComponent={
+        <View style={styles.header}>
+          {!props.offline && (
+            <Pressable onPress={props.onClose} accessibilityLabel="Volver" hitSlop={12}>
+              <Ionicons name="chevron-back" size={28} color={colors.text} />
+            </Pressable>
+          )}
+          <Text style={styles.title}>Descargados</Text>
+          <Text style={styles.count}>
+            {props.offline ? 'Sin conexión: solo suenan los episodios en tu teléfono.' : 'Episodios en tu teléfono'}
+          </Text>
+          {dl.error && <Text style={styles.error}>{dl.error}</Text>}
+        </View>
+      }
+      ListEmptyComponent={
+        <Text style={styles.empty}>
+          No tienes episodios descargados. Con internet, toca ⬇ en un episodio para guardarlo en el teléfono.
+        </Text>
+      }
+      renderItem={({ item }) => (
+        <EpisodeRow
+          ep={item.episode}
+          show={item.show}
+          positions={positions}
+          currentId={currentId}
+          playing={playing}
+          onPlay={props.onPlay}
+          dl={dl}
+          withShow
+        />
+      )}
+    />
   )
 }
 
@@ -489,5 +666,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1
   },
   episodeMain: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  downloadsRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16 },
   notes: { color: colors.faint, fontSize: 13, marginTop: 6, lineHeight: 18 }
 })

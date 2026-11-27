@@ -86,7 +86,9 @@ una versión, no en cada push ni en los PR: corre las pruebas localmente antes (
   pestaña (➕ arriba en Podcasts). Abre uno → sus episodios, del más nuevo al más viejo; toca uno para escucharlo. Suena directo
   del servidor del podcast (no usa espacio en tu nube), con el mismo reproductor, pantalla bloqueada y
   temporizador. Cada episodio **recuerda dónde lo dejaste** ("Quedan 23 min"), y uno terminado queda como
-  *Escuchado*. Mantén presionado un episodio (o toca su descripción) para leerla completa.
+  *Escuchado*. Mantén presionado un episodio (o toca su descripción) para leerla completa. Con ⬇ el
+  episodio se guarda en el teléfono (con datos móviles pregunta antes) y se oye **sin internet**: la
+  pestaña muestra *Descargados*; ✓ lo quita.
 - Al abrir revisa las releases de este repo: si hay una versión más nueva te ofrece descargar su APK.
 - Para desarrollo: `cd mobile && pnpm install && pnpm start` y escanea el QR con **Expo Go**.
 

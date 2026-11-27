@@ -598,18 +598,12 @@ export default function App(): React.JSX.Element {
           onPreviewStart={player.pause}
         />
       ) : tab === 'podcasts' ? (
-        cloud && !offline ? (
-          <PodcastsScreen
-            cloud={cloud}
-            currentId={player.current?.id ?? null}
-            playing={player.playing}
-            onPlay={(ep, from) => void player.playEpisode(ep, from)}
-          />
-        ) : (
-          <View style={[styles.root, styles.center, { padding: 32 }]}>
-            <Text style={styles.offlineText}>Sin conexión: los podcasts necesitan internet.</Text>
-          </View>
-        )
+        <PodcastsScreen
+          cloud={offline ? null : cloud}
+          currentId={player.current?.id ?? null}
+          playing={player.playing}
+          onPlay={(ep, from) => void player.playEpisode(ep, from)}
+        />
       ) : tab === 'home' ? (
         <HomeScreen
           cloud={offline ? null : cloud}
@@ -732,5 +726,4 @@ export default function App(): React.JSX.Element {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   center: { alignItems: 'center', justifyContent: 'center' },
-  offlineText: { color: colors.muted, fontSize: 15, textAlign: 'center' }
 })

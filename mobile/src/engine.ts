@@ -18,7 +18,7 @@ import {
 import type { CloudSong } from '../../src/shared/api'
 import { isListened, pickNext, pickPrev, remember } from '../../src/shared/queue'
 import { chaptersOf } from './books'
-import { isEpisode, type EpisodeSong } from './podcasts'
+import { episodeIdOf, isEpisode, type EpisodeSong } from './podcasts'
 import type { Cloud } from './cloud'
 import * as store from './offline'
 import { recordPlay, setPlaysCloud } from './plays'
@@ -138,8 +138,8 @@ export class Engine {
   }
 
   private async source(song: CloudSong): Promise<{ uri: string; streamed: boolean }> {
-    // A podcast episode streams from the show's own server (a plain, lasting URL).
-    if (isEpisode(song)) return { uri: song.episodeUrl, streamed: false }
+    // A podcast episode: from the phone when downloaded, else from the show's own server (a plain, lasting URL).
+    if (isEpisode(song)) return { uri: store.episodeUri(episodeIdOf(song)) ?? song.episodeUrl, streamed: false }
     const local = store.localUri(song.id)
     if (local) return { uri: local, streamed: false }
     if (!this.cloud) throw new Error('Sin conexión: esta canción no está descargada')

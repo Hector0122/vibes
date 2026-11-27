@@ -2,7 +2,7 @@
 // remembering where it was left) and the helpers the Podcasts screen uses.
 import type { Podcast, PodcastEpisode } from '../../../src/shared/api'
 import { Engine } from '../engine'
-import { loadEpisodePositions } from '../offline'
+import { deleteEpisode, downloadEpisode, episodeUri, loadEpisodePositions, loadSavedEpisodes } from '../offline'
 import { episodeProgress, episodeSong, isEpisode, length, published, startAt } from '../podcasts'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const audio = require('expo-audio') as typeof import('../../__mocks__/expo-audio')
@@ -44,6 +44,36 @@ it('an episode streams from its own URL, no cloud needed, and keeps the show as 
   await e.playEpisode(song)
   expect(audio.mockPlaylist.uris).toEqual(['https://cdn.test/11.mp3'])
   expect(e.state).toMatchObject({ current: { id: 'pc:11' }, error: null })
+})
+
+it('downloaded: kept on the phone with its show, listed newest first, plays from the file; removed: streams again', async () => {
+  await downloadEpisode(ep('11'), show, 1)
+  await downloadEpisode(ep('12'), show, 2)
+  expect(fs.mockDownloads.urls).toEqual(['https://cdn.test/11.mp3', 'https://cdn.test/12.mp3'])
+  expect((await loadSavedEpisodes()).map((x) => [x.episode.id, x.show.title])).toEqual([
+    ['12', show.title],
+    ['11', show.title]
+  ])
+  expect(episodeUri('11')).toBe('file:///docs/vibes/episodes/11.mp3')
+
+  await e.playEpisode(episodeSong(ep('11'), show))
+  expect(audio.mockPlaylist.uris).toEqual(['file:///docs/vibes/episodes/11.mp3'])
+
+  await deleteEpisode('11')
+  expect(episodeUri('11')).toBeNull()
+  expect((await loadSavedEpisodes()).map((x) => x.episode.id)).toEqual(['12'])
+  await e.playEpisode(episodeSong(ep('11'), show))
+  expect(audio.mockPlaylist.uris.at(-1)).toBe('https://cdn.test/11.mp3')
+})
+
+it('a download that fails leaves nothing behind (no half file, not listed)', async () => {
+  fs.mockDownloads.hook = async () => {
+    throw new Error('red')
+  }
+  await expect(downloadEpisode(ep('13'), show, 1)).rejects.toThrow('red')
+  expect(episodeUri('13')).toBeNull()
+  expect(await loadSavedEpisodes()).toEqual([])
+  expect([...fs.mockDisk.keys()].filter((k) => k.includes('/episodes/'))).toEqual([])
 })
 
 it('remembers where each episode was left, and starts there next time', async () => {

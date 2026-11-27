@@ -6,8 +6,10 @@
 //   vibes/library.json     the last song list + playlists seen in the cloud
 //   vibes/books.json       where each audiobook was left
 //   vibes/podcasts.json    where each podcast episode was left
+//   vibes/episodes/{id}.mp3  podcast episodes downloaded to the phone
+//   vibes/episodes.json    those episodes and their show, to list and play them offline
 import { Directory, File, Paths } from 'expo-file-system'
-import type { CloudPlaylist, CloudSong } from '../../src/shared/api'
+import type { CloudPlaylist, CloudSong, Podcast, PodcastEpisode } from '../../src/shared/api'
 
 /** id → sha256 of the copy on the phone (a different sha in the cloud = outdated copy). */
 export type Downloads = Record<string, string>
@@ -162,4 +164,56 @@ export async function saveEpisodePosition(id: string, time: number, duration: nu
     .sort((a, b) => b[1].at - a[1].at)
     .slice(0, MAX_EPISODE_POSITIONS)
   await writeJson(episodesFile(), Object.fromEntries(kept))
+}
+
+// ── Podcast episodes on the phone ──────────────────────────────────────────────
+// Straight from the show's server (no cloud copy). Keyed by the episode's own id.
+
+export interface SavedEpisode {
+  episode: PodcastEpisode
+  show: Podcast
+  savedAt: number
+}
+
+const episodesDir = (): Directory => new Directory(root(), 'episodes')
+const episodeFile = (id: string): File => new File(episodesDir(), `${id}.mp3`)
+const savedEpisodesFile = (): File => new File(root(), 'episodes.json')
+
+/** The downloaded episodes whose file is there, newest download first. */
+export async function loadSavedEpisodes(): Promise<SavedEpisode[]> {
+  const all = (await readJson<Record<string, SavedEpisode>>(savedEpisodesFile())) ?? {}
+  return Object.entries(all)
+    .filter(([id]) => episodeFile(id).exists)
+    .map(([, e]) => e)
+    .sort((a, b) => b.savedAt - a.savedAt)
+}
+
+/** A file:// URI for a downloaded episode, or null. */
+export function episodeUri(id: string): string | null {
+  const f = episodeFile(id)
+  return f.exists ? f.uri : null
+}
+
+/** Downloads an episode (a .part until it's whole), then lists it. */
+export async function downloadEpisode(episode: PodcastEpisode, show: Podcast, at: number): Promise<void> {
+  ensure(episodesDir())
+  const part = new File(episodesDir(), `${episode.id}.part`)
+  try {
+    await File.downloadFileAsync(episode.url, part, { idempotent: true })
+    if (part.size === 0) throw new Error('La descarga quedó vacía')
+    part.moveSync(episodeFile(episode.id), { overwrite: true })
+  } catch (e) {
+    if (part.exists) part.delete()
+    throw e
+  }
+  const all = (await readJson<Record<string, SavedEpisode>>(savedEpisodesFile())) ?? {}
+  await writeJson(savedEpisodesFile(), { ...all, [episode.id]: { episode, show, savedAt: at } })
+}
+
+export async function deleteEpisode(id: string): Promise<void> {
+  const f = episodeFile(id)
+  if (f.exists) f.delete()
+  const all = (await readJson<Record<string, SavedEpisode>>(savedEpisodesFile())) ?? {}
+  delete all[id]
+  await writeJson(savedEpisodesFile(), all)
 }

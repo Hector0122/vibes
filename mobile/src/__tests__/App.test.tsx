@@ -637,6 +637,51 @@ describe('with the cloud set up', () => {
     expect(audio.mockPlaylist.played.at(-1)).toBe('https://cdn.test/panteon.mp3')
   })
 
+  it('Podcasts offline: ⬇ an episode on Wi-Fi; later, without internet, Descargados plays it from the phone', async () => {
+    const { unmount } = await render(<App />)
+    await fireEvent.press(await screen.findByLabelText('Podcasts'))
+    await fireEvent.press(await screen.findByLabelText('Agregar podcast'))
+    await fireEvent.changeText(screen.getByTestId('podcast-search'), 'terror')
+    await fireEvent(screen.getByTestId('podcast-search'), 'submitEditing')
+    await fireEvent.press(await screen.findByLabelText('Podcast: Historias De Terror'))
+    await fireEvent.press(await screen.findByLabelText('Descargar: La casa del panteón'))
+    expect(await screen.findByLabelText('Quitar del teléfono: La casa del panteón')).toBeTruthy()
+    expect(fs.mockDownloads.urls).toContain('https://cdn.test/panteon.mp3')
+    expect(fs.mockDisk.has('file:///docs/vibes/episodes/501.mp3')).toBe(true)
+    await unmount()
+
+    // No internet: the tab shows what's on the phone, and it plays from there.
+    online = false
+    await render(<App />)
+    await fireEvent.press(await screen.findByLabelText('Podcasts'))
+    expect(await screen.findByText('Sin conexión: solo suenan los episodios en tu teléfono.')).toBeTruthy()
+    await fireEvent.press(await screen.findByLabelText('Episodio: La casa del panteón'))
+    await waitFor(() => expect(nowPlaying()).toBe('La casa del panteón'))
+    expect(audio.mockPlaylist.uris.at(-1)).toBe('file:///docs/vibes/episodes/501.mp3')
+  })
+
+  it('Podcasts: on mobile data a download asks first; removing one asks too', async () => {
+    net.mockNetwork.type = net.NetworkStateType.CELLULAR
+    const alert = jest.spyOn(Alert, 'alert')
+    await render(<App />)
+    await fireEvent.press(await screen.findByLabelText('Podcasts'))
+    await fireEvent.press(await screen.findByLabelText('Agregar podcast'))
+    await fireEvent.changeText(screen.getByTestId('podcast-search'), 'terror')
+    await fireEvent(screen.getByTestId('podcast-search'), 'submitEditing')
+    await fireEvent.press(await screen.findByLabelText('Podcast: Historias De Terror'))
+    await fireEvent.press(await screen.findByLabelText('Descargar: La casa del panteón'))
+    await waitFor(() => expect(alert).toHaveBeenCalledWith('Estás usando datos móviles', expect.any(String), expect.any(Array)))
+    expect(fs.mockDownloads.urls).toEqual([]) // nothing spent yet
+    const yes = alert.mock.calls.at(-1)![2]!.find((b) => b.text === 'Descargar')!
+    await act(() => yes.onPress!())
+    await fireEvent.press(await screen.findByLabelText('Quitar del teléfono: La casa del panteón'))
+    const quitar = alert.mock.calls.at(-1)![2]!.find((b) => b.text === 'Quitar')!
+    await act(() => quitar.onPress!())
+    expect(await screen.findByLabelText('Descargar: La casa del panteón')).toBeTruthy()
+    expect(fs.mockDisk.has('file:///docs/vibes/episodes/501.mp3')).toBe(false)
+    alert.mockRestore()
+  })
+
   it('Inicio: tap an artist and only their songs show; Biblioteca sorts A–Z with letters', async () => {
     await render(<App />)
     await fireEvent.press(await screen.findByLabelText('Artista: Caifanes'))

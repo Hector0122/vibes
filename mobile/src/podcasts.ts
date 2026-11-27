@@ -13,6 +13,8 @@ export const isEpisode = (s: CloudSong | null | undefined): s is EpisodeSong =>
 
 /** Never clashes with a song's 11-character id (they can't have ":"). */
 export const episodeSongId = (episodeId: string): string => `pc:${episodeId}`
+/** The episode's own id back from the player's ("pc:123" → "123"). */
+export const episodeIdOf = (s: EpisodeSong): string => s.id.slice(3)
 
 export function episodeSong(ep: PodcastEpisode, show: Podcast): EpisodeSong {
   return {
