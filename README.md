@@ -89,6 +89,13 @@ una versión, no en cada push ni en los PR: corre las pruebas localmente antes (
 
 ### Pendiente / siguiente
 
+- **⚠️ Para la 1.9.0 (Podcasts), desplegar el Worker** (desde `worker/`, en la laptop). Sin esto la app
+  nueva funciona, pero la pestaña Podcasts no puede buscar:
+  1. Cuenta gratis en [api.podcastindex.org](https://api.podcastindex.org) → *API Key* y *API Secret*.
+  2. `pnpm exec wrangler secret put PODCASTINDEX_KEY` y `pnpm exec wrangler secret put PODCASTINDEX_SECRET`.
+  3. `git pull && pnpm migrate:remote && pnpm run deploy` (la migración `0009` crea la tabla de suscripciones).
+  4. Probar en el celular: Podcasts → ➕ → buscar algo → suscribirse → reproducir un episodio.
+  Cuando quede, borra este punto.
 - **Probar la 1.2 en un teléfono real** antes de publicarla: el reproductor nativo (pantalla apagada,
   ⏮ ⏭ en la pantalla bloqueada) y el widget dependen de Android y no se pueden probar aquí (las pruebas
   automáticas y el empaquetado sí pasan). APK de prueba: Actions → CI → Run workflow en la rama, y bajar
