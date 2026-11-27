@@ -2,16 +2,16 @@ import { Ionicons } from '@expo/vector-icons'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { colors } from '../theme'
 
-export type Tab = 'home' | 'library' | 'podcasts' | 'search'
+export type Tab = 'home' | 'music' | 'books' | 'podcasts'
 
 const TABS: { id: Tab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { id: 'home', label: 'Inicio', icon: 'home' },
-  { id: 'library', label: 'Biblioteca', icon: 'library' },
-  { id: 'podcasts', label: 'Podcasts', icon: 'mic' },
-  { id: 'search', label: 'Buscar', icon: 'search' }
+  { id: 'music', label: 'Música', icon: 'musical-notes' },
+  { id: 'books', label: 'Libros', icon: 'book' },
+  { id: 'podcasts', label: 'Podcasts', icon: 'mic' }
 ]
 
-/** Inicio · Biblioteca · Podcasts · Buscar, at the very bottom. */
+/** Inicio · Música · Libros · Podcasts, at the very bottom. Each adds its own (the ➕ at its top). */
 export function TabBar(props: { tab: Tab; onChange: (t: Tab) => void }): React.JSX.Element {
   return (
     <View accessibilityRole="tablist" style={styles.bar}>

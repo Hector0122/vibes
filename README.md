@@ -60,10 +60,11 @@ una versión, no en cada push ni en los PR: corre las pruebas localmente antes (
 - **Widget** en la pantalla de inicio (mantén presionado el fondo → Widgets → Vibes): canción actual y
   ⏮ ▶/⏸ ⏭ sin abrir la app. Con la app cerrada toca **solo lo descargado** (sin internet): retoma tu última
   canción si está descargada, si no, aleatorio de las descargadas.
-- **Abajo: Inicio · Biblioteca · Podcasts · Buscar.** **Inicio**: accesos a tus playlists, *Recomendado para ti* y
-  tus artistas. **Biblioteca**: Canciones (recientes o **A–Z** con letras para saltar), Artistas y
+- **Abajo: Inicio · Música · Libros · Podcasts.** Cada pestaña agrega lo suyo con el **➕** de arriba (música,
+  audiolibros, podcasts). **Inicio**: accesos a tus playlists, *Recomendado para ti* y
+  tus artistas. **Música**: Canciones (recientes o **A–Z** con letras para saltar), Artistas y
   Playlists; una playlist o un artista se abre con **Reproducir** y **Aleatorio**.
-- **Playlists**: las de la computadora aparecen en Biblioteca → Playlists. En el celular: **Nueva playlist**,
+- **Playlists**: las de la computadora aparecen en Música → Playlists. En el celular: **Nueva playlist**,
   deja presionada una canción para agregarla a una playlist o quitarla, y ⋯ para renombrar o eliminar
   (necesita internet; la compu recibe los cambios).
 - **Mantener descargada** una playlist (en su ⋯): baja sola lo que le falte, también las canciones nuevas.
@@ -73,12 +74,12 @@ una versión, no en cada push ni en los PR: corre las pruebas localmente antes (
   suenan desde el teléfono; sin conexión la app abre con tu última biblioteca y solo muestra lo descargado.
   El botón 📱 filtra a "solo descargadas"; ✓ quita una del teléfono (sigue en la nube).
 - Lo que escuchas 30 s cuenta para las sugerencias (se manda a la compu; sin internet, después).
-- **Agregar música** (➕ arriba): busca en Deezer (sin API key) o elige de "Recomendado para ti"; ▶ suena
+- **Agregar música** (➕ arriba en Música): busca en Deezer (sin API key) o elige de "Recomendado para ti"; ▶ suena
   un clip de 30 s. Toca **Agregar** y la canción queda en "Esperando a la compu": la próxima vez que Vibes esté
   abierto en la computadora (revisa cada 2 minutos) la busca en YouTube, la descarga con yt-dlp, la sube y
   aparece en el celular. Si no se pudo, ves el motivo y puedes reintentar o cancelar.
 - **Podcasts**: busca cualquier podcast (Podcast Index, gratis) y **suscríbete** para tenerlo en la
-  pestaña. Abre uno → sus episodios, del más nuevo al más viejo; toca uno para escucharlo. Suena directo
+  pestaña (➕ arriba en Podcasts). Abre uno → sus episodios, del más nuevo al más viejo; toca uno para escucharlo. Suena directo
   del servidor del podcast (no usa espacio en tu nube), con el mismo reproductor, pantalla bloqueada y
   temporizador. Cada episodio **recuerda dónde lo dejaste** ("Quedan 23 min"), y uno terminado queda como
   *Escuchado*. Mantén presionado un episodio (o toca su descripción) para leerla completa. Necesita las

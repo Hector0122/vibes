@@ -43,6 +43,8 @@ export function PodcastsScreen({ cloud, currentId, playing, onPlay }: Props): Re
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [show, setShow] = useState<Podcast | null>(null)
+  /** Agregar podcast: the search, from the ➕. */
+  const [adding, setAdding] = useState(false)
 
   const loadSubs = useCallback(async (): Promise<void> => {
     setError(null)
@@ -99,113 +101,170 @@ export function PodcastsScreen({ cloud, currentId, playing, onPlay }: Props): Re
     )
   }
 
-  const searching = results !== null
-  const list: Podcast[] = searching ? results : (subs ?? [])
-
-  return (
-    <View style={styles.root}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Podcasts</Text>
-        <View style={styles.search}>
-          <Ionicons name="search" size={18} color={colors.faint} />
-          <TextInput
-            testID="podcast-search"
-            style={styles.input}
-            value={query}
-            onChangeText={(t) => {
-              setQuery(t)
-              if (!t.trim()) setResults(null) // cleared: back to your shows
-            }}
-            onSubmitEditing={() => void search()}
-            returnKeyType="search"
-            placeholder="Buscar podcasts"
-            placeholderTextColor={colors.faint}
-            autoCorrect={false}
-          />
-          {busy && <ActivityIndicator size="small" color={colors.pink} />}
-          {!busy && query.length > 0 && (
+  if (adding) {
+    return (
+      <View style={styles.root}>
+        <View style={styles.header}>
+          <View style={styles.headerTop}>
             <Pressable
-              accessibilityLabel="Borrar búsqueda"
-              hitSlop={10}
               onPress={() => {
+                setAdding(false)
                 setQuery('')
                 setResults(null)
               }}
+              accessibilityLabel="Volver"
+              hitSlop={12}
             >
-              <Ionicons name="close-circle" size={18} color={colors.faint} />
+              <Ionicons name="chevron-back" size={28} color={colors.text} />
             </Pressable>
+            <Text style={styles.addTitle}>Agregar podcast</Text>
+          </View>
+          <View style={styles.search}>
+            <Ionicons name="search" size={18} color={colors.faint} />
+            <TextInput
+              testID="podcast-search"
+              style={styles.input}
+              value={query}
+              onChangeText={setQuery}
+              onSubmitEditing={() => void search()}
+              returnKeyType="search"
+              placeholder="Nombre del podcast o tema"
+              placeholderTextColor={colors.faint}
+              autoCorrect={false}
+              autoFocus
+            />
+            {busy && <ActivityIndicator size="small" color={colors.pink} />}
+          </View>
+          <Text style={styles.hint}>
+            Cualquier podcast público (Podcast Index). Suscríbete para tenerlo en Podcasts.
+          </Text>
+          {error && (
+            <Text testID="podcast-error" style={styles.error}>
+              {error}
+            </Text>
           )}
         </View>
-        {error && (
-          <Text testID="podcast-error" style={styles.error}>
-            {error}
-          </Text>
-        )}
-        <Text style={styles.section}>{searching ? 'Resultados' : 'Tus podcasts'}</Text>
-      </View>
-      <FlatList
-        data={list}
-        keyExtractor={(p) => p.id}
-        keyboardShouldPersistTaps="handled"
-        refreshControl={
-          searching ? undefined : (
-            <RefreshControl
-              refreshing={false}
-              onRefresh={() => void loadSubs()}
-              tintColor={colors.pink}
-            />
-          )
-        }
-        ListEmptyComponent={
-          searching ? (
-            busy ? undefined : (
+        <FlatList
+          data={results ?? []}
+          keyExtractor={(p) => p.id}
+          keyboardShouldPersistTaps="handled"
+          ListEmptyComponent={
+            busy || results === null ? undefined : (
               <Text style={styles.empty}>No encontré nada con eso.</Text>
             )
-          ) : subs === null ? (
-            <ActivityIndicator style={{ padding: 32 }} color={colors.pink} />
-          ) : (
-            <Text style={styles.empty}>
-              Busca un podcast arriba y suscríbete para tenerlo aquí.
-            </Text>
-          )
-        }
-        renderItem={({ item: p }) => (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Podcast: ${p.title}`}
-            onPress={() => setShow(p)}
-            style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
-          >
-            <Cover uri={p.image} />
-            <View style={styles.text}>
-              <Text numberOfLines={2} style={styles.rowTitle}>
-                {p.title}
+          }
+          renderItem={({ item: p }) => (
+            <ShowRow
+              show={p}
+              onOpen={() => setShow(p)}
+              trailing={
+                <Pressable
+                  accessibilityLabel={
+                    subscribed(p.id)
+                      ? `Quitar suscripción a ${p.title}`
+                      : `Suscribirse a ${p.title}`
+                  }
+                  hitSlop={10}
+                  onPress={() => void toggleSub(p)}
+                >
+                  <Ionicons
+                    name={subscribed(p.id) ? 'checkmark-circle' : 'add-circle-outline'}
+                    size={28}
+                    color={colors.pink}
+                  />
+                </Pressable>
+              }
+            />
+          )}
+        />
+      </View>
+    )
+  }
+
+  const n = subs?.length ?? 0
+  return (
+    <FlatList
+      style={styles.root}
+      data={subs ?? []}
+      keyExtractor={(p) => p.id}
+      refreshControl={
+        <RefreshControl
+          refreshing={false}
+          onRefresh={() => void loadSubs()}
+          tintColor={colors.pink}
+        />
+      }
+      ListHeaderComponent={
+        <View style={styles.header}>
+          <View style={styles.headerTop}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.title}>Podcasts</Text>
+              <Text style={styles.count}>
+                {n === 1 ? '1 podcast suscrito' : `${n} podcasts suscritos`}
               </Text>
-              {!!p.author && (
-                <Text numberOfLines={1} style={styles.sub}>
-                  {p.author}
-                </Text>
-              )}
             </View>
-            {searching && (
-              <Pressable
-                accessibilityLabel={
-                  subscribed(p.id) ? `Quitar suscripción a ${p.title}` : `Suscribirse a ${p.title}`
-                }
-                hitSlop={10}
-                onPress={() => void toggleSub(p)}
-              >
-                <Ionicons
-                  name={subscribed(p.id) ? 'checkmark-circle' : 'add-circle-outline'}
-                  size={28}
-                  color={colors.pink}
-                />
-              </Pressable>
-            )}
-          </Pressable>
+            <Pressable
+              onPress={() => setAdding(true)}
+              accessibilityLabel="Agregar podcast"
+              hitSlop={8}
+              style={styles.iconBtn}
+            >
+              <Ionicons name="add" size={26} color={colors.text} />
+            </Pressable>
+          </View>
+          {error && (
+            <Text testID="podcast-error" style={styles.error}>
+              {error}
+            </Text>
+          )}
+        </View>
+      }
+      ListEmptyComponent={
+        subs === null ? (
+          <ActivityIndicator style={{ padding: 32 }} color={colors.pink} />
+        ) : (
+          <Text style={styles.empty}>
+            Todavía no sigues ningún podcast. Toca + para buscar uno y suscribirte.
+          </Text>
+        )
+      }
+      renderItem={({ item: p }) => (
+        <ShowRow
+          show={p}
+          onOpen={() => setShow(p)}
+          trailing={<Ionicons name="chevron-forward" size={18} color={colors.faint} />}
+        />
+      )}
+    />
+  )
+}
+
+function ShowRow(props: {
+  show: Podcast
+  onOpen: () => void
+  trailing: React.ReactNode
+}): React.JSX.Element {
+  const p = props.show
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Podcast: ${p.title}`}
+      onPress={props.onOpen}
+      style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
+    >
+      <Cover uri={p.image} />
+      <View style={styles.text}>
+        <Text numberOfLines={2} style={styles.rowTitle}>
+          {p.title}
+        </Text>
+        {!!p.author && (
+          <Text numberOfLines={1} style={styles.sub}>
+            {p.author}
+          </Text>
         )}
-      />
-    </View>
+      </View>
+      {props.trailing}
+    </Pressable>
   )
 }
 
@@ -363,13 +422,21 @@ function ShowScreen(props: {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  header: {
-    paddingHorizontal: 20,
-    paddingTop: 56,
-    paddingBottom: 12,
-    backgroundColor: 'rgba(139,92,246,0.14)'
+  // Same top as Música and Libros.
+  header: { paddingHorizontal: 20, paddingTop: 56, paddingBottom: 8 },
+  headerTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  iconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceHi
   },
-  title: { color: colors.text, fontSize: 26, fontWeight: '800' },
+  title: { color: colors.text, fontSize: 30, fontWeight: '800' },
+  count: { color: colors.muted, fontSize: 13, marginTop: 4 },
+  addTitle: { color: colors.text, fontSize: 26, fontWeight: '800' },
+  hint: { color: colors.faint, fontSize: 12, marginTop: 10, lineHeight: 17 },
   search: {
     flexDirection: 'row',
     alignItems: 'center',

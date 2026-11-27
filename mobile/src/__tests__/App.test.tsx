@@ -240,10 +240,10 @@ function touch(locationX: number, pageX: number, timestamp: number) {
 
 const nowPlaying = (): string => screen.getByTestId('now-playing').props.children
 
-/** The app opens on Inicio: this goes to Biblioteca. */
+/** The app opens on Inicio: this goes to Música. */
 async function renderLibrary(): Promise<void> {
   await render(<App />)
-  await fireEvent.press(await screen.findByLabelText('Biblioteca'))
+  await fireEvent.press(await screen.findByLabelText('Música'))
 }
 
 it('first run: set up the cloud, then the library appears', async () => {
@@ -255,7 +255,7 @@ it('first run: set up the cloud, then the library appears', async () => {
   await fireEvent.changeText(screen.getByTestId('token'), TOKEN)
   await fireEvent.press(screen.getByText('Guardar'))
 
-  await fireEvent.press(await screen.findByLabelText('Biblioteca'))
+  await fireEvent.press(await screen.findByLabelText('Música'))
   expect(await screen.findByText('3 canciones en tu nube')).toBeTruthy()
   expect(JSON.parse(store.mockStore.get('vibes.cloud')!)).toEqual({
     url: 'https://vibes-cloud.example.workers.dev',
@@ -456,7 +456,8 @@ describe('with the cloud set up', () => {
     fs.mockDisk.set('content://dl/Dune%20-%2001.mp3', 'primero')
     fs.mockPick.uris = ['content://dl/Dune%20-%2002.mp3', 'content://dl/Dune%20-%2001.mp3']
     await renderLibrary()
-    await fireEvent.press(await screen.findByText('Libros'))
+    await fireEvent.press(await screen.findByLabelText('Libros'))
+    await fireEvent.press(await screen.findByLabelText('Agregar audiolibro'))
     await fireEvent.press(await screen.findByText('Subir audiolibro desde el teléfono'))
     expect(await screen.findByDisplayValue('Dune')).toBeTruthy() // name guessed from the files
     await fireEvent.press(screen.getByText('Guardar'))
@@ -507,6 +508,7 @@ describe('with the cloud set up', () => {
     fs.mockDisk.set('content://dl/Dune%20-%2003.mp3', 'tercero')
     fs.mockPick.uris = ['content://dl/Dune%20-%2003.mp3']
     await fireEvent.press(screen.getByLabelText('Volver'))
+    await fireEvent.press(await screen.findByLabelText('Agregar audiolibro'))
     await fireEvent.press(await screen.findByText('Subir audiolibro desde el teléfono'))
     await fireEvent.press(screen.getByText('Guardar'))
     await waitFor(() => expect(UPLOADED).toHaveLength(3))
@@ -514,8 +516,7 @@ describe('with the cloud set up', () => {
     await fireEvent.press(await screen.findByLabelText('Audiolibro: Dune'))
 
     // The music doesn't show the chapters.
-    await fireEvent.press(screen.getByLabelText('Volver'))
-    await fireEvent.press(screen.getByText('Canciones'))
+    await fireEvent.press(screen.getByLabelText('Música'))
     expect(screen.getByTestId('count')).toHaveTextContent('3 canciones en tu nube')
     expect(screen.queryByTestId(`song-${UPLOADED[0].id}`)).toBeNull()
   })
@@ -523,7 +524,8 @@ describe('with the cloud set up', () => {
   it('LibriVox: search, accept the size, name it: the chapters come into the cloud in order, with the cover, and play', async () => {
     const alert = jest.spyOn(Alert, 'alert')
     await renderLibrary()
-    await fireEvent.press(await screen.findByText('Libros'))
+    await fireEvent.press(await screen.findByLabelText('Libros'))
+    await fireEvent.press(await screen.findByLabelText('Agregar audiolibro'))
     await fireEvent.press(await screen.findByText('Buscar audiolibros gratis (LibriVox)'))
     await fireEvent.changeText(screen.getByTestId('book-search'), 'platero')
     await fireEvent(screen.getByTestId('book-search'), 'submitEditing')
@@ -556,6 +558,29 @@ describe('with the cloud set up', () => {
     await fireEvent.press(await screen.findByText('Reproducir'))
     await waitFor(() => expect(nowPlaying()).toBe('Platero'))
     alert.mockRestore()
+  })
+
+  it('tabs: Inicio · Música · Libros · Podcasts, each with its own ➕ at the top', async () => {
+    await render(<App />)
+    for (const t of ['Inicio', 'Música', 'Libros', 'Podcasts']) expect(await screen.findByLabelText(t)).toBeTruthy()
+    expect(screen.queryByLabelText('Buscar')).toBeNull()
+
+    await fireEvent.press(screen.getByLabelText('Música'))
+    expect(await screen.findByLabelText('Agregar música')).toBeTruthy()
+    expect(screen.getByText('Canciones')).toBeTruthy()
+    expect(screen.getAllByText('Libros')).toHaveLength(1) // the tab, no longer a chip in Música
+
+    await fireEvent.press(screen.getByLabelText('Libros'))
+    expect(await screen.findByLabelText('Agregar audiolibro')).toBeTruthy()
+    expect(screen.getByTestId('title')).toHaveTextContent('Libros')
+    expect(screen.queryByText('Canciones')).toBeNull()
+
+    await fireEvent.press(screen.getByLabelText('Podcasts'))
+    expect(await screen.findByText('0 podcasts suscritos')).toBeTruthy()
+    await fireEvent.press(screen.getByLabelText('Agregar podcast'))
+    expect(await screen.findByTestId('podcast-search')).toBeTruthy()
+    await fireEvent.press(screen.getByLabelText('Volver'))
+    expect(await screen.findByText('0 podcasts suscritos')).toBeTruthy()
   })
 
   it('Inicio: tap an artist and only their songs show; Biblioteca sorts A–Z with letters', async () => {
@@ -873,7 +898,7 @@ describe('editing playlists on the phone', () => {
       await fireEvent.press(screen.getByLabelText('Opciones de la playlist'))
       await fireEvent.press(await screen.findByText('Eliminar playlist'))
       await waitFor(() => expect(PLAYLISTS.map((p) => p.id)).toEqual(['p1']))
-      expect(screen.getByTestId('title')).toHaveTextContent('Biblioteca')
+      expect(screen.getByTestId('title')).toHaveTextContent('Música')
     } finally {
       alert.mockRestore()
     }

@@ -1,7 +1,7 @@
 import { File } from 'expo-file-system'
 import { StatusBar } from 'expo-status-bar'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ActivityIndicator, Alert, Linking, StyleSheet, View } from 'react-native'
+import { ActivityIndicator, Alert, Linking, StyleSheet, Text, View } from 'react-native'
 import {
   applyPlaylistOp,
   type CloudPlaylist,
@@ -85,6 +85,8 @@ export default function App(): React.JSX.Element {
   const [positions, setPositions] = useState<BookPositions>({})
   const [upload, setUpload] = useState<string | null>(null)
   const [findingBook, setFindingBook] = useState(false)
+  /** Agregar música (Deezer search + recommendations), opened from Música's ➕ or Inicio. */
+  const [addingMusic, setAddingMusic] = useState(false)
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS)
 
   const cloud: Cloud | null = useMemo(() => {
@@ -250,13 +252,30 @@ export default function App(): React.JSX.Element {
     setBook(null)
     setArtist(null)
     setPlaylistId(id)
-    setTab('library')
+    setTab('music')
   }
   const openArtist = (name: string | null): void => {
     setBook(null)
     setPlaylistId(null)
     setArtist(name)
-    setTab('library')
+    setTab('music')
+  }
+  /** Each tab starts at its own top: Música without the open book, Libros without the open playlist or artist. */
+  const changeTab = (t: Tab): void => {
+    setNowOpen(false)
+    setAddingMusic(false)
+    setFindingBook(false)
+    if (t === 'books') {
+      setPlaylistId(null)
+      setArtist(null)
+    } else if (t === 'music') setBook(null)
+    if (t === tab) {
+      // Tapping the tab you're on goes back to its top.
+      setPlaylistId(null)
+      setArtist(null)
+      setBook(null)
+    }
+    setTab(t)
   }
   const openBook = (name: string): void => {
     setPlaylistId(null)
@@ -568,23 +587,29 @@ export default function App(): React.JSX.Element {
             })
           }}
         />
-      ) : tab === 'search' && cloud ? (
+      ) : addingMusic && cloud ? (
         <SearchScreen
           cloud={cloud}
           onClose={() => {
-            setTab('library')
+            setAddingMusic(false)
             void refresh() // songs the computer already brought in
           }}
           onRequested={(r) => setRequests((list) => [...list.filter((x) => x.id !== r.id), r])}
           onPreviewStart={player.pause}
         />
-      ) : tab === 'podcasts' && cloud && !offline ? (
-        <PodcastsScreen
-          cloud={cloud}
-          currentId={player.current?.id ?? null}
-          playing={player.playing}
-          onPlay={(ep, from) => void player.playEpisode(ep, from)}
-        />
+      ) : tab === 'podcasts' ? (
+        cloud && !offline ? (
+          <PodcastsScreen
+            cloud={cloud}
+            currentId={player.current?.id ?? null}
+            playing={player.playing}
+            onPlay={(ep, from) => void player.playEpisode(ep, from)}
+          />
+        ) : (
+          <View style={[styles.root, styles.center, { padding: 32 }]}>
+            <Text style={styles.offlineText}>Sin conexión: los podcasts necesitan internet.</Text>
+          </View>
+        )
       ) : tab === 'home' ? (
         <HomeScreen
           cloud={offline ? null : cloud}
@@ -601,14 +626,15 @@ export default function App(): React.JSX.Element {
             setSection('songs')
             setOnlyDownloaded(true)
           }}
-          onOpenSearch={() => setTab('search')}
+          onOpenSearch={() => setAddingMusic(true)}
           onOpenSettings={() => setEditing(true)}
         />
       ) : (
         <LibraryScreen
           songs={shown}
           total={music.length}
-          title={selected?.name ?? artist ?? 'Biblioteca'}
+          kind={tab === 'books' ? 'books' : 'music'}
+          title={tab === 'books' ? (book ?? 'Libros') : (selected?.name ?? artist ?? 'Música')}
           loading={loading}
           error={error ?? downloads.error}
           offline={offline}
@@ -624,8 +650,18 @@ export default function App(): React.JSX.Element {
           books={books}
           book={book}
           onSelectBook={openBook}
-          onUploadBook={cloud ? () => void pickBook() : undefined}
-          onFindBook={cloud ? () => setFindingBook(true) : undefined}
+          onAddBook={
+            cloud
+              ? () =>
+                  setSheet({
+                    title: 'Agregar audiolibro',
+                    actions: [
+                      { label: 'Buscar audiolibros gratis (LibriVox)', onPress: () => setFindingBook(true) },
+                      { label: 'Subir audiolibro desde el teléfono', onPress: () => void pickBook() }
+                    ]
+                  })
+              : undefined
+          }
           onBookCover={cloud && book ? () => void pickCover(book) : undefined}
           upload={upload}
           onShuffleAll={(visible) => {
@@ -656,7 +692,7 @@ export default function App(): React.JSX.Element {
           onRemoveDownload={(s) => downloads.remove([s.id])}
           progress={downloads.progress}
           onCancelDownloads={downloads.cancel}
-          onOpenSearch={() => setTab('search')}
+          onOpenSearch={() => setAddingMusic(true)}
           onSongMenu={songMenu}
           onNewPlaylist={() => askNewPlaylist()}
           onMenu={
@@ -670,7 +706,7 @@ export default function App(): React.JSX.Element {
         />
       )}
       <PlayerBar player={player} onOpen={() => setNowOpen(true)} />
-      {!(nowOpen && player.current) && <TabBar tab={tab} onChange={setTab} />}
+      {!(nowOpen && player.current) && <TabBar tab={tab} onChange={changeTab} />}
       <ActionSheet
         visible={!!sheet}
         title={sheet?.title ?? ''}
@@ -695,5 +731,6 @@ export default function App(): React.JSX.Element {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  center: { alignItems: 'center', justifyContent: 'center' }
+  center: { alignItems: 'center', justifyContent: 'center' },
+  offlineText: { color: colors.muted, fontSize: 15, textAlign: 'center' }
 })

@@ -53,6 +53,10 @@ interface Props {
   /** Reports the filtered list, which is what the player plays through. */
   onVisibleChange?: (visible: CloudSong[]) => void
 
+  /** Música (songs, artists, playlists) or Libros (audiobooks): each is its own tab. */
+  kind?: 'music' | 'books'
+  /** Libros' ➕: find one on LibriVox or upload it from the phone. */
+  onAddBook?: () => void
   /** Canciones / Artistas / Playlists (when nothing is open). */
   section?: Section
   onSection?: (s: Section) => void
@@ -68,10 +72,6 @@ interface Props {
   books?: ArtistGroup[]
   book?: string | null
   onSelectBook?: (name: string) => void
-  /** Picks audio files on the phone and uploads them as a book. */
-  onUploadBook?: () => void
-  /** Find a free audiobook on LibriVox. */
-  onFindBook?: () => void
   /** Picks an image on the phone as the open book's cover. */
   onBookCover?: () => void
   /** What the upload is doing; null when none runs. */
@@ -156,7 +156,8 @@ export function LibraryScreen(p: Props): React.JSX.Element {
   const card = Math.floor((useWindowDimensions().width - 56) / 2)
   const list = useRef<FlatList<CloudSong>>(null)
   const openName = p.playlistId ? 'playlist' : p.artist ? 'artist' : p.book ? 'book' : null
-  const section = openName ? 'songs' : (p.section ?? 'songs')
+  const books = p.kind === 'books'
+  const section: Section = openName ? 'songs' : books ? 'books' : (p.section ?? 'songs')
   // A–Z only for the whole library; a playlist keeps its order.
   const sorted = !openName && az
   const visible = useMemo(() => {
@@ -244,7 +245,12 @@ export function LibraryScreen(p: Props): React.JSX.Element {
     )
   )
 
-  /** Biblioteca's top: title, actions and the Canciones / Artistas / Playlists switch. */
+  const add = books
+    ? p.onAddBook && { onPress: p.onAddBook, label: 'Agregar audiolibro' }
+    : p.onOpenSearch && { onPress: p.onOpenSearch, label: 'Agregar música' }
+  const bookCount = p.books?.length ?? 0
+
+  /** The tab's top: title, count, ➕ Agregar and (Música) the Canciones / Artistas / Playlists switch. */
   const libraryTop = (
     <>
       <View style={styles.headerTop}>
@@ -252,25 +258,31 @@ export function LibraryScreen(p: Props): React.JSX.Element {
           <Text testID="title" numberOfLines={1} style={styles.title}>
             {p.title}
           </Text>
-          <Text testID="count" style={styles.count}>
-            {p.total} canciones en tu nube
-            {p.downloadedCount ? ` · ` : ''}
-            {!!p.downloadedCount && (
-              <Text testID="downloaded-count">{p.downloadedCount} en el teléfono</Text>
-            )}
-          </Text>
+          {books ? (
+            <Text testID="count" style={styles.count}>
+              {bookCount === 1 ? '1 audiolibro' : `${bookCount} audiolibros`} en tu nube
+            </Text>
+          ) : (
+            <Text testID="count" style={styles.count}>
+              {p.total} canciones en tu nube
+              {p.downloadedCount ? ` · ` : ''}
+              {!!p.downloadedCount && (
+                <Text testID="downloaded-count">{p.downloadedCount} en el teléfono</Text>
+              )}
+            </Text>
+          )}
         </View>
-        {p.onOpenSearch && !p.offline && (
+        {add && !p.offline && (
           <Pressable
-            onPress={p.onOpenSearch}
-            accessibilityLabel="Agregar música"
+            onPress={add.onPress}
+            accessibilityLabel={add.label}
             hitSlop={8}
             style={styles.iconBtn}
           >
             <Ionicons name="add" size={26} color={colors.text} />
           </Pressable>
         )}
-        {p.onMenu && (
+        {p.onMenu && !books && (
           <Pressable
             onPress={p.onMenu}
             accessibilityLabel="Opciones de descarga"
@@ -282,13 +294,13 @@ export function LibraryScreen(p: Props): React.JSX.Element {
         )}
       </View>
       {offlineBanner}
+      {!books && (
       <View accessibilityRole="tablist" style={styles.segments}>
         {(
           [
             ['songs', 'Canciones'],
             ['artists', 'Artistas'],
-            ['playlists', 'Playlists'],
-            ['books', 'Libros']
+            ['playlists', 'Playlists']
           ] as const
         ).map(([id, label]) => (
           <Pressable
@@ -304,6 +316,7 @@ export function LibraryScreen(p: Props): React.JSX.Element {
           </Pressable>
         ))}
       </View>
+      )}
     </>
   )
 
@@ -358,30 +371,13 @@ export function LibraryScreen(p: Props): React.JSX.Element {
         ListHeaderComponent={
           <View style={styles.header}>
             {libraryTop}
-            {p.upload ? (
+            {p.upload && (
               <View style={styles.progressRow}>
                 <ActivityIndicator size="small" color={colors.pink} />
                 <Text testID="upload-progress" style={styles.progressText}>
                   {p.upload}
                 </Text>
               </View>
-            ) : (
-              !p.offline && (
-                <>
-                  {p.onUploadBook && (
-                    <Pressable style={styles.progressRow} onPress={p.onUploadBook}>
-                      <Ionicons name="cloud-upload-outline" size={20} color={colors.pinkSoft} />
-                      <Text style={styles.link}>Subir audiolibro desde el teléfono</Text>
-                    </Pressable>
-                  )}
-                  {p.onFindBook && (
-                    <Pressable style={styles.progressRow} onPress={p.onFindBook}>
-                      <Ionicons name="search" size={20} color={colors.pinkSoft} />
-                      <Text style={styles.link}>Buscar audiolibros gratis (LibriVox)</Text>
-                    </Pressable>
-                  )}
-                </>
-              )
             )}
             {errorText}
           </View>
@@ -389,7 +385,7 @@ export function LibraryScreen(p: Props): React.JSX.Element {
         ListEmptyComponent={
           p.loading ? undefined : (
             <Text style={styles.empty}>
-              Todavía no tienes audiolibros. Descarga los archivos en tu teléfono y súbelos aquí.
+              Todavía no tienes audiolibros. Toca + para buscar uno gratis o subirlo desde el teléfono.
             </Text>
           )
         }
