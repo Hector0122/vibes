@@ -173,6 +173,8 @@ export interface SavedEpisode {
   episode: PodcastEpisode
   show: Podcast
   savedAt: number
+  /** Brought by the automatic downloads (they may remove it); by hand, it stays. */
+  auto?: boolean
 }
 
 const episodesDir = (): Directory => new Directory(root(), 'episodes')
@@ -195,7 +197,7 @@ export function episodeUri(id: string): string | null {
 }
 
 /** Downloads an episode (a .part until it's whole), then lists it. */
-export async function downloadEpisode(episode: PodcastEpisode, show: Podcast, at: number): Promise<void> {
+export async function downloadEpisode(episode: PodcastEpisode, show: Podcast, at: number, auto = false): Promise<void> {
   ensure(episodesDir())
   const part = new File(episodesDir(), `${episode.id}.part`)
   try {
@@ -207,7 +209,7 @@ export async function downloadEpisode(episode: PodcastEpisode, show: Podcast, at
     throw e
   }
   const all = (await readJson<Record<string, SavedEpisode>>(savedEpisodesFile())) ?? {}
-  await writeJson(savedEpisodesFile(), { ...all, [episode.id]: { episode, show, savedAt: at } })
+  await writeJson(savedEpisodesFile(), { ...all, [episode.id]: { episode, show, savedAt: at, ...(auto ? { auto } : {}) } })
 }
 
 export async function deleteEpisode(id: string): Promise<void> {

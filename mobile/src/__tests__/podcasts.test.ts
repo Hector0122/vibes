@@ -3,7 +3,8 @@
 import type { Podcast, PodcastEpisode } from '../../../src/shared/api'
 import { Engine } from '../engine'
 import { deleteEpisode, downloadEpisode, episodeUri, loadEpisodePositions, loadSavedEpisodes } from '../offline'
-import { episodeProgress, episodeSong, isEpisode, length, published, startAt } from '../podcasts'
+import { autoEpisodePlan, episodeProgress, episodeSong, isEpisode, length, published, startAt } from '../podcasts'
+import { syncAutoEpisodes } from '../podcastSync'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const audio = require('expo-audio') as typeof import('../../__mocks__/expo-audio')
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -128,4 +129,75 @@ it('formats dates and lengths', () => {
   expect(length(3900)).toBe('1 h 05 min')
   expect(length(2520)).toBe('42 min')
   expect(length(null)).toBe('')
+})
+
+describe('automatic downloads: only the newest episodes you have not heard', () => {
+  const eps = (...ids: string[]) => ids.map((id) => ep(id))
+  const savedAs = (auto: boolean, ...ids: string[]) => ids.map((id) => ({ episode: ep(id), auto }))
+  const heard = { 'pc:6': { time: 3590, duration: 3600, at: 1 } }
+  const halfway = { 'pc:4': { time: 900, duration: 3600, at: 1 } }
+
+  it('nothing on the phone: brings the 2 newest, not dozens', () => {
+    expect(autoEpisodePlan(eps('5', '4', '3', '2', '1'), [], {})).toEqual({
+      download: [ep('5'), ep('4')],
+      remove: []
+    })
+  })
+
+  it('a new one comes out: it comes in, and the oldest of the two (not started) goes', () => {
+    const plan = autoEpisodePlan(eps('6', '5', '4', '3'), savedAs(true, '5', '4'), {})
+    expect(plan.download.map((e) => e.id)).toEqual(['6'])
+    expect(plan.remove).toEqual(['4'])
+  })
+
+  it('heard: removed, and nothing older comes to take its place', () => {
+    const plan = autoEpisodePlan(eps('6', '5', '4'), savedAs(true, '6', '5'), heard)
+    expect(plan).toEqual({ download: [], remove: ['6'] })
+  })
+
+  it('halfway through an old one: it stays until you finish it', () => {
+    const plan = autoEpisodePlan(eps('6', '5', '4'), savedAs(true, '5', '4'), halfway)
+    expect(plan.remove).toEqual([])
+  })
+
+  it('downloaded by hand: never removed on its own', () => {
+    expect(autoEpisodePlan(eps('6', '5', '4', '1'), savedAs(false, '1'), {}).remove).toEqual([])
+  })
+
+  it('sync: on the phone and on disk; again after a new episode; a show you leave takes its automatic ones', async () => {
+    let list = eps('5', '4', '3')
+    let subs: Podcast[] = [show]
+    const cloud = {
+      listPodcastSubscriptions: async () => subs.map((p) => ({ ...p, subscribedAt: 1 })),
+      podcastEpisodes: async () => list
+    }
+    expect(await syncAutoEpisodes(cloud, 1)).toEqual({ downloaded: 2, removed: 0 })
+    expect((await loadSavedEpisodes()).map((x) => [x.episode.id, x.auto]).sort()).toEqual([
+      ['4', true],
+      ['5', true]
+    ])
+
+    list = eps('6', '5', '4', '3')
+    expect(await syncAutoEpisodes(cloud, 2)).toEqual({ downloaded: 1, removed: 1 })
+    expect((await loadSavedEpisodes()).map((x) => x.episode.id).sort()).toEqual(['5', '6'])
+    expect(episodeUri('4')).toBeNull()
+
+    expect(await syncAutoEpisodes(cloud, 3)).toEqual({ downloaded: 0, removed: 0 }) // nothing new: nothing moves
+
+    subs = []
+    expect(await syncAutoEpisodes(cloud, 4)).toEqual({ downloaded: 0, removed: 2 })
+    expect(await loadSavedEpisodes()).toEqual([])
+  })
+
+  it('sync: Apple not answering for a show leaves its episodes as they are', async () => {
+    await downloadEpisode(ep('5'), show, 1, true)
+    const cloud = {
+      listPodcastSubscriptions: async () => [{ ...show, subscribedAt: 1 }],
+      podcastEpisodes: async () => {
+        throw new Error('Apple Podcasts no respondió')
+      }
+    }
+    expect(await syncAutoEpisodes(cloud, 2)).toEqual({ downloaded: 0, removed: 0 })
+    expect(episodeUri('5')).not.toBeNull()
+  })
 })

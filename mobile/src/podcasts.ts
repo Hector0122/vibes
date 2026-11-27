@@ -91,3 +91,38 @@ export function length(sec: number | null): string {
   const m = Math.round(sec / 60)
   return m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} min` : `${m} min`
 }
+
+/** Automatic downloads keep, per show, only this many of its newest episodes you haven't heard. */
+export const AUTO_EPISODES = 2
+
+const isHeard = (ep: PodcastEpisode, positions: EpisodePositions): boolean => {
+  const p = episodeProgress(ep, positions)
+  return !!p && 'heard' in p
+}
+/** Started and not finished: never removed on its own. */
+export const isHalfHeard = (ep: PodcastEpisode, positions: EpisodePositions): boolean => {
+  const p = episodeProgress(ep, positions)
+  return !!p && 'left' in p
+}
+
+/**
+ * One show's automatic downloads: bring its newest `keep` episodes you haven't heard; drop the
+ * automatic ones that are heard or no longer among the newest (unless you're halfway through).
+ * `episodes` newest first; `saved` the show's episodes on the phone (yours by hand are never dropped).
+ */
+export function autoEpisodePlan(
+  episodes: PodcastEpisode[],
+  saved: { episode: PodcastEpisode; auto?: boolean }[],
+  positions: EpisodePositions,
+  keep = AUTO_EPISODES
+): { download: PodcastEpisode[]; remove: string[] } {
+  const wanted = episodes.slice(0, keep).filter((e) => !isHeard(e, positions))
+  const wantedIds = new Set(wanted.map((e) => e.id))
+  const have = new Set(saved.map((s) => s.episode.id))
+  return {
+    download: wanted.filter((e) => !have.has(e.id)),
+    remove: saved
+      .filter((s) => s.auto && !wantedIds.has(s.episode.id) && !isHalfHeard(s.episode, positions))
+      .map((s) => s.episode.id)
+  }
+}

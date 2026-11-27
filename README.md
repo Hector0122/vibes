@@ -88,7 +88,9 @@ una versión, no en cada push ni en los PR: corre las pruebas localmente antes (
   temporizador. Cada episodio **recuerda dónde lo dejaste** ("Quedan 23 min"), y uno terminado queda como
   *Escuchado*. Mantén presionado un episodio (o toca su descripción) para leerla completa. Con ⬇ el
   episodio se guarda en el teléfono (con datos móviles pregunta antes) y se oye **sin internet**: la
-  pestaña muestra *Descargados*; ✓ lo quita.
+  pestaña muestra *Descargados*; ✓ lo quita. **Solos**: al abrir la app con Wi-Fi, de cada podcast que
+  sigues se bajan sus **2 episodios más nuevos que no has escuchado**; los que terminas o dejan de ser de
+  los 2 más nuevos se borran (si no vas a la mitad). Los que bajas a mano no se borran solos.
 - Al abrir revisa las releases de este repo: si hay una versión más nueva te ofrece descargar su APK.
 - Para desarrollo: `cd mobile && pnpm install && pnpm start` y escanea el QR con **Expo Go**.
 

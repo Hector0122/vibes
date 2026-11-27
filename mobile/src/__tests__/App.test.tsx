@@ -682,6 +682,22 @@ describe('with the cloud set up', () => {
     alert.mockRestore()
   })
 
+  it('Podcasts you follow: opening the app on Wi-Fi brings their new episode by itself (not on mobile data)', async () => {
+    PODCAST_SUBS = [{ id: '1795502264', title: 'Historias De Terror', author: 'Historias De Terror', image: null, subscribedAt: 1 }]
+    net.mockNetwork.type = net.NetworkStateType.CELLULAR
+    const first = await render(<App />)
+    await fireEvent.press(await screen.findByLabelText('Podcasts'))
+    await new Promise((r) => setTimeout(r, 200))
+    expect(fs.mockDownloads.urls).toEqual([]) // "solo con Wi-Fi": waits
+    await first.unmount()
+
+    net.mockNetwork.type = net.NetworkStateType.WIFI
+    await render(<App />)
+    await waitFor(() => expect(fs.mockDisk.has('file:///docs/vibes/episodes/501.mp3')).toBe(true))
+    await fireEvent.press(await screen.findByLabelText('Podcasts'))
+    expect(await screen.findByText('Descargados · 1 episodio')).toBeTruthy()
+  })
+
   it('Inicio: tap an artist and only their songs show; Biblioteca sorts A–Z with letters', async () => {
     await render(<App />)
     await fireEvent.press(await screen.findByLabelText('Artista: Caifanes'))

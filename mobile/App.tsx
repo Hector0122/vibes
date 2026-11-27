@@ -1,6 +1,6 @@
 import { File } from 'expo-file-system'
 import { StatusBar } from 'expo-status-bar'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Alert, Linking, StyleSheet, Text, View } from 'react-native'
 import {
   applyPlaylistOp,
@@ -27,6 +27,7 @@ import {
   type Prefs
 } from './src/offline'
 import { onWifi } from './src/network'
+import { syncAutoEpisodes } from './src/podcastSync'
 import { flushPlays } from './src/plays'
 import { HomeScreen } from './src/screens/HomeScreen'
 import {
@@ -182,6 +183,18 @@ export default function App(): React.JSX.Element {
       cancelled = true
     }
   }, [offline, downloadsReady, prefs, songs, playlists, download])
+
+  // Podcasts you follow: their newest episodes you haven't heard come to the phone on their own
+  // (2 per show; heard or old ones make room), once per app open, on Wi-Fi only if so set.
+  const syncedPodcasts = useRef(false)
+  useEffect(() => {
+    if (offline || !cloud || syncedPodcasts.current) return
+    syncedPodcasts.current = true
+    void (async () => {
+      if (prefs.wifiOnly && !(await onWifi())) return void (syncedPodcasts.current = false)
+      await syncAutoEpisodes(cloud).catch(() => (syncedPodcasts.current = false))
+    })()
+  }, [offline, cloud, prefs.wifiOnly])
 
   /** Manual downloads: on mobile data with "solo Wi-Fi" on, ask first. */
   const downloadAsked = async (list: CloudSong[]): Promise<void> => {
