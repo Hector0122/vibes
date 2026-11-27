@@ -365,6 +365,19 @@ async function run(): Promise<void> {
     await app.eval(trash)
     await waitFor(app, `!(${titles}).includes(${JSON.stringify(victim)}) && (${titles}).length === 3`, 'song deleted')
     console.log('✓ delete a song:', victim)
+
+    // 7c. Closing the window only hides it (the tray icon stays): the app and the music go on.
+    const audioEl = `document.querySelector('[data-testid=audio]')`
+    await app.eval(`(${audioEl}.src ? ${audioEl}.play() : Promise.reject(new Error('nothing loaded')))`)
+    await waitFor(app, `!${audioEl}.paused`, 'playing before closing')
+    await app.eval(`window.close()`)
+    await sleep(1500)
+    assert.equal(app.proc.exitCode, null, 'closing the window keeps the app running')
+    const t0 = await app.eval<number>(`${audioEl}.currentTime`)
+    await sleep(800)
+    assert.ok(!(await app.eval<boolean>(`${audioEl}.paused`)), 'music keeps playing with the window closed')
+    assert.ok((await app.eval<number>(`${audioEl}.currentTime`)) !== t0, 'and moves on')
+    console.log('✓ closing the window keeps the music going (tray)')
   } finally {
     await stop(app)
   }

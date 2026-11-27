@@ -75,3 +75,30 @@ export function isListened(time: number, duration: number): boolean {
   if (!Number.isFinite(duration) || duration <= 0) return false
   return time >= Math.min(30, duration / 2)
 }
+
+/** A shuffled copy (Fisher–Yates). */
+export function shuffled<T>(list: T[], rand: Rand = Math.random): T[] {
+  const out = [...list]
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1))
+    ;[out[i], out[j]] = [out[j], out[i]]
+  }
+  return out
+}
+
+/** `extra` (recommendations) spread through `mine`: one after every `every` of mine, none twice or already in `mine`. */
+export function mixIn<T extends { id: string }>(mine: T[], extra: T[], every = 3): T[] {
+  const seen = new Set(mine.map((s) => s.id))
+  const add: T[] = []
+  for (const s of extra) {
+    if (seen.has(s.id)) continue
+    seen.add(s.id)
+    add.push(s)
+  }
+  const out: T[] = []
+  mine.forEach((s, i) => {
+    out.push(s)
+    if ((i + 1) % every === 0 && add.length) out.push(add.shift()!)
+  })
+  return [...out, ...add]
+}

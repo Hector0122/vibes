@@ -40,6 +40,10 @@ una versión, no en cada push ni en los PR: corre las pruebas localmente antes (
 - **Reproductor**: reproducción automática, aleatorio tipo baraja (todas suenan antes de repetir),
   "anterior" real, volumen, teclas multimedia, **radio sin fin** (al acabarse la lista siguen canciones
   parecidas). El color de la app sigue a la portada que suena.
+- **Ícono en la barra** (COSMIC/KDE; en GNOME con la extensión AppIndicator): ▶/⏸, ⏭, ⏮, Abrir y Salir.
+  Cerrar la ventana la esconde y la música sigue. ▶ sin nada puesto pone tu música al azar y, con
+  internet, va intercalando recomendadas (una cada 3 tuyas). Instalada, **abre sola al iniciar sesión**,
+  solo con el ícono (se quita en el menú del ícono: *Abrir al iniciar sesión*).
 - **Reproduciendo ahora**: clic en la canción del reproductor → portada grande y **letra sincronizada**
   (LRCLIB; se guarda en disco).
 - **Herramientas**: importar de eSound (solo con la biblioteca vacía), descargar faltantes, subir a la nube.

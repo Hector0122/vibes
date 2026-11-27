@@ -47,6 +47,8 @@ interface Props {
   onRadio: (on: boolean) => void
   /** The queue ran out while the radio is on: the app brings songs like this one. */
   onQueueEnd: (last: SongRef) => void
+  /** ▶ in the tray icon with nothing picked yet: the app starts something. */
+  onTrayStart: () => void
 }
 
 export function Player({
@@ -62,7 +64,8 @@ export function Player({
   onAdd,
   radio,
   onRadio,
-  onQueueEnd
+  onQueueEnd,
+  onTrayStart
 }: Props): React.JSX.Element {
   const audio = useRef<HTMLAudioElement>(null)
   const [playing, setPlayingState] = useState(false)
@@ -199,6 +202,14 @@ export function Player({
     if (el.paused) el.play().catch(() => setPlaying(false))
     else el.pause()
   }
+
+  // The tray icon's buttons (the window may be hidden), and what it should show.
+  const commands = useRef({ toggle, next: () => next(), prev })
+  commands.current = { toggle: () => (song ? toggle() : onTrayStart()), next: () => next(), prev }
+  useEffect(() => window.api.onPlayerCommand((c) => commands.current[c]()), [])
+  useEffect(() => {
+    window.api.playerState({ playing, title: song ? `${song.title} — ${song.artists}` : null })
+  }, [playing, song?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const pct = (v: number, max: number): string => `${max > 0 ? (v / max) * 100 : 0}%`
   const shownVolume = muted ? 0 : volume

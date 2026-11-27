@@ -7,6 +7,7 @@ import { Library } from './Library'
 import { Player } from './Player'
 import { PlaylistView } from './PlaylistView'
 import { SONG_MIME } from './SongTable'
+import { mixIn, shuffled } from '../../shared/queue'
 
 const TASK_LABEL: Record<TaskProgress['task'], string> = {
   import: 'Copiando audio de eSound',
@@ -178,6 +179,28 @@ export default function App(): React.JSX.Element {
     for (const t of tracks) seen.current.set(t.id, t)
     setSource({ label, tracks })
     setCurrentId(id)
+  }
+
+  /**
+   * ▶ in the tray with nothing picked: your songs at random right away; online, recommendations
+   * (they stream from YouTube) are mixed in when they arrive, one every 3 of yours.
+   */
+  const trayStart = (): void => {
+    const mine = shuffled(songs.filter((s) => s.file))
+    if (!mine.length) return
+    const label = 'Tu música al azar'
+    playFromList(label, mine, mine[0].id)
+    if (!navigator.onLine) return
+    window.api.recommend().then(
+      (r) => {
+        const recs = r.results.map(toRef)
+        if (!recs.length) return
+        for (const t of recs) seen.current.set(t.id, t)
+        // Only if you haven't picked something else meanwhile.
+        setSource((cur) => (cur?.label === label ? { label: 'Tu música y recomendadas', tracks: mixIn(mine, recs) } : cur))
+      },
+      () => {} // no internet after all: just yours
+    )
   }
 
   async function startRadio(last: SongRef): Promise<void> {
@@ -559,6 +582,7 @@ export default function App(): React.JSX.Element {
         radio={radio}
         onRadio={setRadio}
         onQueueEnd={startRadio}
+        onTrayStart={trayStart}
       />
       {showSettings && (
         <CloudSettings

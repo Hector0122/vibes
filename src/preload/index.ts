@@ -37,6 +37,8 @@ const api: VibesAPI = {
   checkForUpdate: () => ipcRenderer.invoke('update:check'),
   installUpdate: () => ipcRenderer.invoke('update:install'),
   onUpdateProgress: (cb) => on('update-progress', cb),
+  onPlayerCommand: (cb) => on('player-command', cb),
+  playerState: (s) => ipcRenderer.send('player:state', s),
   onSongsRemoved: (cb) => on('songs-removed', cb),
   onPlaylistsChanged: (cb) => on('playlists-changed', () => cb()),
   onProgress: (cb) => on('progress', cb)

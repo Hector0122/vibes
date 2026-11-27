@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, nativeImage, safeStorage, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, safeStorage, shell, Tray } from 'electron'
 import { mkdirSync } from 'fs'
 import { join } from 'path'
 import { YOUTUBE_ID_RE } from '../shared/api'
@@ -35,6 +35,9 @@ import {
 } from './tasks'
 import { findOnYoutube, radioFor, recommend, searchYoutube, streamResolver } from './youtube'
 import { keepLang } from '../shared/lang'
+import { autostartFirstRun, HIDDEN_FLAG, isAutostartOn, setAutostart } from './autostart'
+import { trayMenu, trayTooltip, type PlayerCommand, type PlayerState } from './tray'
+import trayIconPath from '../../build/icon.png?asset'
 
 // Tests point these at fixtures; normal runs use the real locations.
 if (process.env.VIBES_USER_DATA) app.setPath('userData', process.env.VIBES_USER_DATA)
@@ -42,6 +45,9 @@ const esoundDir = (): string =>
   process.env.VIBES_ESOUND_DIR || join(app.getPath('appData'), 'eSound Music')
 
 let win: BrowserWindow | null = null
+let tray: Tray | null = null
+/** Closing the window only hides it (music keeps going); "Salir" in the tray really quits. */
+let quitting = false
 
 /** How often to look for songs marked on the phone while the app is open. */
 const REQUESTS_EVERY_MS = 2 * 60_000
@@ -59,6 +65,10 @@ function single<T>(fn: () => Promise<T>): () => Promise<T> {
 }
 
 async function main(): Promise<void> {
+  // One Vibes: opening it again (or the autostart one) shows the window that's there.
+  if (!app.requestSingleInstanceLock()) return app.quit()
+  app.on('second-instance', () => showWindow())
+  app.on('before-quit', () => (quitting = true))
   await app.whenReady()
   const userData = app.getPath('userData')
   const audioDir = join(userData, 'audio')
@@ -311,8 +321,17 @@ async function main(): Promise<void> {
     backgroundColor: '#0a0a0a',
     title: 'Vibes',
     autoHideMenuBar: true,
-    webPreferences: { preload: join(__dirname, '../preload/index.js'), sandbox: false }
+    // Started at login: only the icon in the bar until it's opened.
+    show: !process.argv.includes(HIDDEN_FLAG),
+    // Hidden, it still has to move on to the next song on time.
+    webPreferences: { preload: join(__dirname, '../preload/index.js'), sandbox: false, backgroundThrottling: false }
   })
+  win.on('close', (e) => {
+    if (quitting || !tray) return
+    e.preventDefault()
+    win?.hide()
+  })
+  setUpTray(mode === 'deb' ? process.execPath : mode === 'appimage' ? (process.env.APPIMAGE ?? null) : null, userData)
   // Links (e.g. to YouTube) open in the browser, never inside the app.
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https:\/\//.test(url)) shell.openExternal(url)
@@ -327,6 +346,51 @@ async function main(): Promise<void> {
   playlistSync.schedule()
   // And songs marked on the phone while this computer was off.
   checkRequestsQuietly()
+}
+
+function showWindow(): void {
+  if (!win) return
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+}
+
+/**
+ * The icon in the bar: ▶/⏸, ⏭, ⏮ go to the player in the window (shown or not).
+ * `exec` is the installed app to start at login (null when running from source: no autostart).
+ */
+function setUpTray(exec: string | null, userData: string): void {
+  const configHome = process.env.XDG_CONFIG_HOME || join(app.getPath('home'), '.config')
+  if (exec) autostartFirstRun(configHome, exec, join(userData, 'autostart-offered'))
+  let state: PlayerState = { playing: false, title: null }
+  tray = new Tray(nativeImage.createFromPath(trayIconPath).resize({ width: 24, height: 24 }))
+  const render = (): void => {
+    tray?.setToolTip(trayTooltip(state))
+    tray?.setContextMenu(
+      Menu.buildFromTemplate(
+        trayMenu(state, {
+          command: (c: PlayerCommand) => win?.webContents.send('player-command', c),
+          show: showWindow,
+          quit: () => app.quit(),
+          autostart: exec
+            ? {
+                on: isAutostartOn(configHome),
+                set: (on) => {
+                  setAutostart(configHome, exec, on)
+                  render()
+                }
+              }
+            : null
+        })
+      )
+    )
+  }
+  tray.on('click', showWindow)
+  ipcMain.on('player:state', (_e, s: PlayerState) => {
+    state = { playing: !!s?.playing, title: typeof s?.title === 'string' ? s.title : null }
+    render()
+  })
+  render()
 }
 
 app.on('window-all-closed', () => app.quit())

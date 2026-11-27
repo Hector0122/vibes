@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isListened, pickNext, pickPrev, remember } from '../queue'
+import { isListened, mixIn, pickNext, pickPrev, remember, shuffled } from '../queue'
 
 const Q = ['a', 'b', 'c', 'd', 'e']
 
@@ -140,5 +140,28 @@ describe('pickNext keeps the language in shuffle', () => {
     expect(fromUnknown.size).toBe(4)
     expect(pickNext(Q, null, true, Q, seq(0.99), langOf).id).toBe('e')
     expect(pickNext(['a', 'b', 'd'], 'a', true, ['b', 'd'], seq(0), langOf).id).toBe('b')
+  })
+})
+
+describe('the tray mix', () => {
+  const ids = (l: { id: string }[]): string => l.map((s) => s.id).join(' ')
+  const t = (...xs: string[]): { id: string }[] => xs.map((id) => ({ id }))
+
+  it('one recommendation after every 3 of your songs; leftovers at the end', () => {
+    expect(ids(mixIn(t('a', 'b', 'c', 'd', 'e', 'f', 'g'), t('X', 'Y', 'Z', 'W')))).toBe('a b c X d e f Y g Z W')
+  })
+
+  it('skips recommendations you already have, or repeated ones; none: just yours', () => {
+    expect(ids(mixIn(t('a', 'b', 'c'), t('a', 'X', 'X')))).toBe('a b c X')
+    expect(ids(mixIn(t('a', 'b'), []))).toBe('a b')
+  })
+
+  it('shuffled: same songs, another order, the original untouched', () => {
+    const list = t('a', 'b', 'c', 'd')
+    let k = 0
+    const out = shuffled(list, () => [0.1, 0.9, 0.5][k++ % 3])
+    expect(ids(out).split(' ').sort()).toEqual(['a', 'b', 'c', 'd'])
+    expect(ids(out)).not.toBe('a b c d')
+    expect(ids(list)).toBe('a b c d')
   })
 })

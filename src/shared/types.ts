@@ -142,6 +142,10 @@ export interface VibesAPI {
   checkForUpdate(): Promise<UpdateOffer | null>
   /** Downloads and installs it (the system asks for the password), then restarts; an AppImage opens the page. */
   installUpdate(): Promise<void>
+  /** Buttons in the tray icon (▶/⏸, ⏭, ⏮), for the player. */
+  onPlayerCommand(cb: (c: 'toggle' | 'next' | 'prev') => void): () => void
+  /** What the tray icon shows: playing or not, and the song. */
+  playerState(s: { playing: boolean; title: string | null }): void
   onUpdateProgress(cb: (p: { stage: 'download'; percent: number } | { stage: 'install' }) => void): () => void
   /** Songs deleted (here or on the phone). */
   onSongsRemoved(cb: (ids: string[]) => void): () => void
