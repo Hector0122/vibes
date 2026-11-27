@@ -64,7 +64,7 @@ export interface Cloud {
   sendToVelody(id: string): Promise<void>
   /** Stores an image (a book's cover); returns its URL, which loads without the token. */
   uploadCover(bytes: Uint8Array, type: string): Promise<string>
-  /** Podcasts (Podcast Index, through the Worker). */
+  /** Podcasts (Apple's directory, through the Worker). */
   searchPodcasts(query: string): Promise<PodcastSearchResponse['results']>
   podcastEpisodes(id: string): Promise<PodcastEpisode[]>
   listPodcastSubscriptions(): Promise<ListPodcastSubscriptionsResponse['podcasts']>

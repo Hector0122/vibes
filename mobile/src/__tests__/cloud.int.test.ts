@@ -19,10 +19,10 @@ const META = {
 }
 
 /** A Worker with one complete song and one still uploading. */
-async function worker(): Promise<typeof fetch> {
+async function worker(outside?: typeof fetch): Promise<typeof fetch> {
   const r2 = new FakeR2()
   const env: Env = { BUCKET: r2 as unknown as R2Bucket, DB: createFakeD1(), R2_BUCKET_NAME: 'vibes', API_TOKEN: TOKEN }
-  const app = createApp(fakePresign)
+  const app = createApp(fakePresign, { fetch: outside })
   const f = ((input: RequestInfo | URL, init?: RequestInit) => app.fetch(new Request(input, init), env)) as typeof fetch
   const call = (path: string, method = 'POST', body?: unknown): Promise<Response> =>
     f(`https://w.test/v1${path}`, {
@@ -88,13 +88,17 @@ describe('mobile cloud client', () => {
     )
   })
 
-  it('podcast subscriptions: subscribe, list, unsubscribe; without the key, a clear error', async () => {
-    const cloud = createCloud({ url: 'https://w.test', token: TOKEN, fetch: await worker() })
+  it('podcasts: search (Apple, no key) marks what you follow; subscribe, list, unsubscribe', async () => {
+    const apple = (async () =>
+      Response.json({
+        results: [{ kind: 'podcast', collectionId: 920666, collectionName: 'Leyendas Legendarias', artistName: 'Leyendas' }]
+      })) as unknown as typeof fetch
+    const cloud = createCloud({ url: 'https://w.test', token: TOKEN, fetch: await worker(apple) })
     expect(await cloud.listPodcastSubscriptions()).toEqual([])
     const show = { id: '920666', title: 'Leyendas Legendarias', author: 'Leyendas', image: null }
     expect((await cloud.subscribePodcast(show)).map((p) => p.id)).toEqual(['920666'])
+    expect(await cloud.searchPodcasts('leyendas')).toEqual([{ ...show, subscribed: true }])
     expect(await cloud.unsubscribePodcast('920666')).toEqual([])
-    await expect(cloud.searchPodcasts('leyendas')).rejects.toThrow('PODCASTINDEX_KEY')
   })
 
   it('only https URLs', () => {

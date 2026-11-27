@@ -359,9 +359,9 @@ export interface ListVelodySendsResponse {
   sends: VelodySend[]
 }
 
-// Podcasts: found through Podcast Index (podcastindex.org, free; the Worker keeps its key),
+// Podcasts: found through Apple's podcast directory (the iTunes Search API, free, no key),
 // subscribed in the cloud, and streamed straight from each show's own server: the audio
-// never passes through R2. Ids are Podcast Index feed / episode ids.
+// never passes through R2. Ids are Apple's show (collection) / episode (track) ids.
 
 export const PODCAST_ID_RE = /^\d{1,15}$/
 export const MAX_PODCAST_SUBSCRIPTIONS = 500

@@ -1,4 +1,4 @@
-// Podcasts: shows found through Podcast Index (by the Worker), subscribed in the cloud.
+// Podcasts: shows found in Apple's directory (by the Worker), subscribed in the cloud.
 // An episode plays straight from the show's own server, as a "song" the player
 // knows how to handle (no cloud file, no shuffle, not counted as a play), and each
 // one remembers where it was left (offline.ts).

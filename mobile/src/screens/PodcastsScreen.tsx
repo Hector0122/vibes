@@ -35,7 +35,7 @@ interface Props {
 
 type Show = Podcast & { subscribed: boolean }
 
-/** Podcasts: your shows, a search (Podcast Index) and a show's episodes. */
+/** Podcasts: your shows, a search (Apple's directory) and a show's episodes. */
 export function PodcastsScreen({ cloud, currentId, playing, onPlay }: Props): React.JSX.Element {
   const [subs, setSubs] = useState<Podcast[] | null>(null)
   const [query, setQuery] = useState('')
@@ -136,7 +136,7 @@ export function PodcastsScreen({ cloud, currentId, playing, onPlay }: Props): Re
             {busy && <ActivityIndicator size="small" color={colors.pink} />}
           </View>
           <Text style={styles.hint}>
-            Cualquier podcast público (Podcast Index). Suscríbete para tenerlo en Podcasts.
+            Cualquier podcast del directorio de Apple Podcasts. Suscríbete para tenerlo en Podcasts.
           </Text>
           {error && (
             <Text testID="podcast-error" style={styles.error}>

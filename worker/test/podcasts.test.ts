@@ -1,6 +1,5 @@
-// Podcasts from the phone: search and episodes through Podcast Index (faked), and
+// Podcasts from the phone: search and episodes through Apple's directory (faked), and
 // subscriptions kept in D1 (the real migration SQL).
-import { createHash } from 'node:crypto'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createHarness, type Harness } from './fakes'
 import type {
@@ -8,55 +7,63 @@ import type {
   PodcastEpisodesResponse,
   PodcastSearchResponse
 } from '../../src/shared/api'
-import { plainText } from '../src/podcastindex'
+import { plainText } from '../src/podcasts'
 
-const NOW = 1_764_000_000_000
 const calls: { url: URL; headers: Headers }[] = []
 
-function fakePodcastIndex(mode: 'ok' | 'denied' | 'down' = 'ok'): typeof fetch {
+function fakeApple(mode: 'ok' | 'busy' | 'broken' | 'down' = 'ok'): typeof fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input))
     calls.push({ url, headers: new Headers(init?.headers) })
     if (mode === 'down') throw new TypeError('fetch failed')
-    if (mode === 'denied') return new Response('{}', { status: 401 })
-    if (url.pathname.endsWith('/search/byterm')) {
+    if (mode === 'busy') return new Response('', { status: 403 })
+    if (mode === 'broken') return new Response('oops', { status: 500 })
+    if (url.pathname === '/search') {
       return Response.json({
-        status: 'true',
-        feeds: [
+        resultCount: 2,
+        results: [
           {
-            id: 920666,
-            title: 'Leyendas Legendarias',
-            author: 'Leyendas',
-            artwork: 'https://img.test/ll.jpg'
+            wrapperType: 'track',
+            kind: 'podcast',
+            collectionId: 920666,
+            collectionName: 'Leyendas Legendarias',
+            artistName: 'Leyendas',
+            artworkUrl600: 'https://img.test/ll.jpg'
           },
-          { id: 5, title: 'Muerto', author: 'x', dead: 1 },
-          { id: 6, title: '  ' }
+          { wrapperType: 'track', kind: 'podcast', collectionId: 6, collectionName: '  ' }
         ]
       })
     }
-    if (url.pathname.endsWith('/episodes/byfeedid')) {
+    if (url.pathname === '/lookup') {
       return Response.json({
-        status: 'true',
-        items: [
+        results: [
           {
-            id: 11,
-            feedId: 920666,
-            title: 'Episodio viejo',
-            enclosureUrl: 'http://cdn.test/old.mp3',
-            duration: 3600,
-            datePublished: 1_700_000_000,
-            feedImage: 'https://img.test/ll.jpg',
+            wrapperType: 'track',
+            kind: 'podcast',
+            collectionId: 920666,
+            collectionName: 'Leyendas Legendarias',
+            artworkUrl600: 'https://img.test/ll.jpg'
+          },
+          {
+            wrapperType: 'podcastEpisode',
+            trackId: 11,
+            collectionId: 920666,
+            trackName: 'Episodio viejo',
+            episodeUrl: 'http://cdn.test/old.mp3',
+            trackTimeMillis: 3_600_000,
+            releaseDate: '2023-11-14T22:13:20Z',
             description: '<p>Hola &amp; <b>adiós</b></p>'
           },
           {
-            id: 12,
-            feedId: 920666,
-            title: 'Episodio nuevo',
-            enclosureUrl: 'https://cdn.test/new.mp3',
-            duration: 0,
-            datePublished: 1_760_000_000
+            wrapperType: 'podcastEpisode',
+            trackId: 12,
+            collectionId: 920666,
+            trackName: 'Episodio nuevo',
+            episodeUrl: 'https://cdn.test/new.mp3',
+            releaseDate: '2025-10-09T09:06:40Z',
+            artworkUrl600: 'https://img.test/ep12.jpg'
           },
-          { id: 13, title: 'Sin audio', enclosureUrl: '' }
+          { wrapperType: 'podcastEpisode', trackId: 13, trackName: 'Sin audio' }
         ]
       })
     }
@@ -67,15 +74,13 @@ function fakePodcastIndex(mode: 'ok' | 'denied' | 'down' = 'ok'): typeof fetch {
 let h: Harness
 beforeEach(() => {
   calls.length = 0
-  h = createHarness({ fetch: fakePodcastIndex(), now: () => NOW })
-  h.env.PODCASTINDEX_KEY = 'KEY'
-  h.env.PODCASTINDEX_SECRET = 'SECRET'
+  h = createHarness({ fetch: fakeApple() })
 })
 
 const show = { title: 'Leyendas Legendarias', author: 'Leyendas', image: 'https://img.test/ll.jpg' }
 
 describe('podcast search', () => {
-  it('signs each call (key + secret + date, SHA-1) and leaves out dead or nameless shows', async () => {
+  it('asks Apple for podcasts in Mexico\'s store, needs no key, and leaves out nameless shows', async () => {
     const res = await h.call('GET', '/v1/podcasts/search?q=leyendas')
     expect(res.status).toBe(200)
     const { results } = (await res.json()) as PodcastSearchResponse
@@ -89,13 +94,10 @@ describe('podcast search', () => {
       }
     ])
     const { url, headers } = calls[0]
-    expect(url.searchParams.get('q')).toBe('leyendas')
-    const date = String(Math.floor(NOW / 1000))
-    expect(headers.get('X-Auth-Key')).toBe('KEY')
-    expect(headers.get('X-Auth-Date')).toBe(date)
-    expect(headers.get('Authorization')).toBe(
-      createHash('sha1').update(`KEYSECRET${date}`).digest('hex')
-    )
+    expect(url.origin + url.pathname).toBe('https://itunes.apple.com/search')
+    expect(url.searchParams.get('term')).toBe('leyendas')
+    expect(url.searchParams.get('media')).toBe('podcast')
+    expect(url.searchParams.get('country')).toBe('MX')
     expect(headers.get('User-Agent')).toBeTruthy()
   })
 
@@ -107,22 +109,14 @@ describe('podcast search', () => {
     expect(results[0].subscribed).toBe(true)
   })
 
-  it('says what is missing when the key is not set up, and never calls out', async () => {
-    delete h.env.PODCASTINDEX_SECRET
-    const res = await h.call('GET', '/v1/podcasts/search?q=x')
-    expect(res.status).toBe(503)
-    expect(((await res.json()) as { error: string }).error).toMatch(/PODCASTINDEX_KEY/)
-    expect(calls).toHaveLength(0)
-  })
-
-  it('turns Podcast Index failures into clear errors', async () => {
-    for (const mode of ['denied', 'down'] as const) {
-      const hh = createHarness({ fetch: fakePodcastIndex(mode) })
-      hh.env.PODCASTINDEX_KEY = 'KEY'
-      hh.env.PODCASTINDEX_SECRET = 'SECRET'
-      const res = await hh.call('GET', '/v1/podcasts/search?q=x')
-      expect(res.status).toBe(502)
+  it('turns Apple failures into clear errors (too many searches: try again in a minute)', async () => {
+    const expected = { busy: 503, broken: 502, down: 502 } as const
+    for (const mode of ['busy', 'broken', 'down'] as const) {
+      const res = await createHarness({ fetch: fakeApple(mode) }).call('GET', '/v1/podcasts/search?q=x')
+      expect(res.status).toBe(expected[mode])
     }
+    const busy = await createHarness({ fetch: fakeApple('busy') }).call('GET', '/v1/podcasts/search?q=x')
+    expect(((await busy.json()) as { error: string }).error).toMatch(/un minuto/)
   })
 
   it('needs something to search, and the token', async () => {
@@ -144,14 +138,18 @@ describe('episodes', () => {
       url: 'https://cdn.test/old.mp3',
       durationSec: 3600,
       publishedAt: 1_700_000_000_000,
-      image: 'https://img.test/ll.jpg',
+      image: 'https://img.test/ll.jpg', // the show's, when the episode has none
       description: 'Hola & adiós'
     })
     expect(episodes[0].durationSec).toBeNull()
+    expect(episodes[0].image).toBe('https://img.test/ep12.jpg')
+    expect(calls[0].url.pathname).toBe('/lookup')
     expect(calls[0].url.searchParams.get('id')).toBe('920666')
+    expect(calls[0].url.searchParams.get('entity')).toBe('podcastEpisode')
+    expect(calls[0].url.searchParams.get('limit')).toBe('100')
   })
 
-  it('rejects ids that are not Podcast Index ids', async () => {
+  it('rejects ids that are not Apple podcast ids', async () => {
     expect((await h.call('GET', '/v1/podcasts/abc/episodes')).status).toBe(400)
   })
 })

@@ -78,24 +78,16 @@ una versión, no en cada push ni en los PR: corre las pruebas localmente antes (
   un clip de 30 s. Toca **Agregar** y la canción queda en "Esperando a la compu": la próxima vez que Vibes esté
   abierto en la computadora (revisa cada 2 minutos) la busca en YouTube, la descarga con yt-dlp, la sube y
   aparece en el celular. Si no se pudo, ves el motivo y puedes reintentar o cancelar.
-- **Podcasts**: busca cualquier podcast (Podcast Index, gratis) y **suscríbete** para tenerlo en la
+- **Podcasts**: busca cualquier podcast (directorio de Apple Podcasts, gratis y sin cuenta) y **suscríbete** para tenerlo en la
   pestaña (➕ arriba en Podcasts). Abre uno → sus episodios, del más nuevo al más viejo; toca uno para escucharlo. Suena directo
   del servidor del podcast (no usa espacio en tu nube), con el mismo reproductor, pantalla bloqueada y
   temporizador. Cada episodio **recuerda dónde lo dejaste** ("Quedan 23 min"), y uno terminado queda como
-  *Escuchado*. Mantén presionado un episodio (o toca su descripción) para leerla completa. Necesita las
-  llaves de Podcast Index en el Worker (ver *Tu nube*).
+  *Escuchado*. Mantén presionado un episodio (o toca su descripción) para leerla completa.
 - Al abrir revisa las releases de este repo: si hay una versión más nueva te ofrece descargar su APK.
 - Para desarrollo: `cd mobile && pnpm install && pnpm start` y escanea el QR con **Expo Go**.
 
 ### Pendiente / siguiente
 
-- **⚠️ Para la 1.9.0 (Podcasts), desplegar el Worker** (desde `worker/`, en la laptop). Sin esto la app
-  nueva funciona, pero la pestaña Podcasts no puede buscar:
-  1. Cuenta gratis en [api.podcastindex.org](https://api.podcastindex.org) → *API Key* y *API Secret*.
-  2. `pnpm exec wrangler secret put PODCASTINDEX_KEY` y `pnpm exec wrangler secret put PODCASTINDEX_SECRET`.
-  3. `git pull && pnpm migrate:remote && pnpm run deploy` (la migración `0009` crea la tabla de suscripciones).
-  4. Probar en el celular: Podcasts → ➕ → buscar algo → suscribirse → reproducir un episodio.
-  Cuando quede, borra este punto.
 - **Probar la 1.2 en un teléfono real** antes de publicarla: el reproductor nativo (pantalla apagada,
   ⏮ ⏭ en la pantalla bloqueada) y el widget dependen de Android y no se pueden probar aquí (las pruebas
   automáticas y el empaquetado sí pasan). APK de prueba: Actions → CI → Run workflow en la rama, y bajar
@@ -158,14 +150,6 @@ pnpm exec wrangler secret put R2_ACCOUNT_ID
 pnpm exec wrangler secret put R2_ACCESS_KEY_ID
 pnpm exec wrangler secret put R2_SECRET_ACCESS_KEY
 pnpm run deploy
-```
-
-**Podcasts** (opcional): crea una cuenta gratis en [api.podcastindex.org](https://api.podcastindex.org),
-que te da una *API Key* y un *API Secret*, y guárdalos como secretos:
-
-```bash
-pnpm exec wrangler secret put PODCASTINDEX_KEY
-pnpm exec wrangler secret put PODCASTINDEX_SECRET
 ```
 
 En la app, botón **Nube**: pega la URL del Worker y tu token, prueba la conexión y guarda. El token se
