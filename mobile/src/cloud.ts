@@ -4,6 +4,11 @@
 // No React Native imports, so it is tested against the real Worker with Vitest.
 import {
   type UploadCoverResponse,
+  type ListPodcastSubscriptionsResponse,
+  type Podcast,
+  type PodcastEpisode,
+  type PodcastEpisodesResponse,
+  type PodcastSearchResponse,
   API_PREFIX,
   type CloudPlaylist,
   type CloudSong,
@@ -59,6 +64,12 @@ export interface Cloud {
   sendToVelody(id: string): Promise<void>
   /** Stores an image (a book's cover); returns its URL, which loads without the token. */
   uploadCover(bytes: Uint8Array, type: string): Promise<string>
+  /** Podcasts (Podcast Index, through the Worker). */
+  searchPodcasts(query: string): Promise<PodcastSearchResponse['results']>
+  podcastEpisodes(id: string): Promise<PodcastEpisode[]>
+  listPodcastSubscriptions(): Promise<ListPodcastSubscriptionsResponse['podcasts']>
+  subscribePodcast(p: Podcast): Promise<ListPodcastSubscriptionsResponse['podcasts']>
+  unsubscribePodcast(id: string): Promise<ListPodcastSubscriptionsResponse['podcasts']>
 }
 
 /** "https://x.workers.dev/" → "https://x.workers.dev"; '' when it isn't an https URL. */
@@ -162,6 +173,29 @@ export function createCloud(opts: {
       ),
     sendToVelody: (id) => call<unknown>(`/velody/${encodeURIComponent(id)}`, 'PUT').then(() => undefined),
     uploadCover: (bytes, type) =>
-      call<UploadCoverResponse>('/covers', 'POST', bytes, type).then((r) => r.coverUrl)
+      call<UploadCoverResponse>('/covers', 'POST', bytes, type).then((r) => r.coverUrl),
+    searchPodcasts: (q) =>
+      call<PodcastSearchResponse>(`/podcasts/search?q=${encodeURIComponent(q.trim())}`).then((r) => r.results),
+    podcastEpisodes: (id) =>
+      call<PodcastEpisodesResponse>(`/podcasts/${encodeURIComponent(id)}/episodes`).then((r) => r.episodes),
+    // An older Worker without podcasts answers 404: none yet.
+    listPodcastSubscriptions: () =>
+      call<ListPodcastSubscriptionsResponse>('/podcasts/subscriptions').then(
+        (r) => r.podcasts,
+        (e: unknown) => {
+          if (e instanceof CloudError && e.status === 404) return []
+          throw e
+        }
+      ),
+    subscribePodcast: (p) =>
+      call<ListPodcastSubscriptionsResponse>(`/podcasts/subscriptions/${encodeURIComponent(p.id)}`, 'PUT', {
+        title: p.title,
+        author: p.author,
+        image: p.image
+      }).then((r) => r.podcasts),
+    unsubscribePodcast: (id) =>
+      call<ListPodcastSubscriptionsResponse>(`/podcasts/subscriptions/${encodeURIComponent(id)}`, 'DELETE').then(
+        (r) => r.podcasts
+      )
   }
 }

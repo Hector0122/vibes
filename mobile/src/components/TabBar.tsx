@@ -2,15 +2,16 @@ import { Ionicons } from '@expo/vector-icons'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { colors } from '../theme'
 
-export type Tab = 'home' | 'library' | 'search'
+export type Tab = 'home' | 'library' | 'podcasts' | 'search'
 
 const TABS: { id: Tab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { id: 'home', label: 'Inicio', icon: 'home' },
   { id: 'library', label: 'Biblioteca', icon: 'library' },
+  { id: 'podcasts', label: 'Podcasts', icon: 'mic' },
   { id: 'search', label: 'Buscar', icon: 'search' }
 ]
 
-/** Inicio · Biblioteca · Buscar, at the very bottom. */
+/** Inicio · Biblioteca · Podcasts · Buscar, at the very bottom. */
 export function TabBar(props: { tab: Tab; onChange: (t: Tab) => void }): React.JSX.Element {
   return (
     <View accessibilityRole="tablist" style={styles.bar}>

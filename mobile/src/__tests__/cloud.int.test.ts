@@ -88,6 +88,15 @@ describe('mobile cloud client', () => {
     )
   })
 
+  it('podcast subscriptions: subscribe, list, unsubscribe; without the key, a clear error', async () => {
+    const cloud = createCloud({ url: 'https://w.test', token: TOKEN, fetch: await worker() })
+    expect(await cloud.listPodcastSubscriptions()).toEqual([])
+    const show = { id: '920666', title: 'Leyendas Legendarias', author: 'Leyendas', image: null }
+    expect((await cloud.subscribePodcast(show)).map((p) => p.id)).toEqual(['920666'])
+    expect(await cloud.unsubscribePodcast('920666')).toEqual([])
+    await expect(cloud.searchPodcasts('leyendas')).rejects.toThrow('PODCASTINDEX_KEY')
+  })
+
   it('only https URLs', () => {
     expect(normalizeUrl(' https://x.workers.dev/ ')).toBe('https://x.workers.dev')
     expect(normalizeUrl('http://x.workers.dev')).toBe('')

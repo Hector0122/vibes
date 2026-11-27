@@ -19,6 +19,13 @@ import {
   validatePlaylistOps,
   validatePlaylists,
   validatePlays,
+  validatePodcast,
+  PODCAST_ID_RE,
+  MAX_PODCAST_SUBSCRIPTIONS,
+  type ListPodcastSubscriptionsResponse,
+  type Podcast,
+  type PodcastEpisodesResponse,
+  type PodcastSearchResponse,
   type ApiError,
   type CloudPlaylist,
   type ListPlaylistOpsResponse,
@@ -49,6 +56,7 @@ import { isAuthorized } from './auth'
 import type { Env } from './env'
 import type { Presigner } from './presign'
 import { DeezerError, searchDeezer } from './deezer'
+import { podcastEpisodes, PodcastIndexError, searchPodcasts, type PodcastIndexKeys } from './podcastindex'
 
 interface RequestRow {
   id: string
@@ -136,8 +144,10 @@ export interface App {
 }
 
 export interface AppOptions {
-  /** For calls to Deezer (tests pass a fake). */
+  /** For calls to Deezer and Podcast Index (tests pass a fake). */
   fetch?: typeof fetch
+  /** Clock for Podcast Index's signed calls (tests pass a fixed one). */
+  now?: () => number
 }
 
 export function createApp(presign: Presigner, opts: AppOptions = {}): App {
@@ -498,6 +508,76 @@ export function createApp(presign: Presigner, opts: AppOptions = {}): App {
     return { deleted: true }
   }
 
+  // ── Podcasts (Podcast Index; the audio streams from each show's server) ──
+
+  function podcastKeys(env: Env): PodcastIndexKeys {
+    if (!env.PODCASTINDEX_KEY || !env.PODCASTINDEX_SECRET) {
+      return fail(503, 'Falta configurar Podcast Index en la nube (PODCASTINDEX_KEY y PODCASTINDEX_SECRET)')
+    }
+    return { key: env.PODCASTINDEX_KEY, secret: env.PODCASTINDEX_SECRET }
+  }
+
+  async function fromPodcastIndex<T>(work: () => Promise<T>): Promise<T> {
+    try {
+      return await work()
+    } catch (e) {
+      if (e instanceof PodcastIndexError) fail(e.status, e.message)
+      throw e
+    }
+  }
+
+  async function searchPodcastsRoute(env: Env, url: URL): Promise<PodcastSearchResponse> {
+    const q = (url.searchParams.get('q') ?? '').trim()
+    if (!q || q.length > MAX_QUERY) fail(400, 'Escribe qué buscar')
+    const keys = podcastKeys(env)
+    const hits = await fromPodcastIndex(() => searchPodcasts(keys, q, opts.fetch ?? fetch, opts.now))
+    const subs = new Set((await listPodcastSubs(env)).podcasts.map((p) => p.id))
+    return { results: hits.map((p) => ({ ...p, subscribed: subs.has(p.id) })) }
+  }
+
+  async function episodesRoute(env: Env, id: string): Promise<PodcastEpisodesResponse> {
+    const keys = podcastKeys(env)
+    return { episodes: await fromPodcastIndex(() => podcastEpisodes(keys, id, opts.fetch ?? fetch, opts.now)) }
+  }
+
+  async function listPodcastSubs(env: Env): Promise<ListPodcastSubscriptionsResponse> {
+    const { results } = await env.DB.prepare(
+      'SELECT id, title, author, image, subscribed_at FROM podcast_subscriptions ORDER BY subscribed_at DESC'
+    ).all<{ id: string; title: string; author: string; image: string | null; subscribed_at: number }>()
+    return {
+      podcasts: results.map((r) => ({
+        id: r.id,
+        title: r.title,
+        author: r.author,
+        image: r.image,
+        subscribedAt: r.subscribed_at
+      }))
+    }
+  }
+
+  /** Subscribing again only refreshes the show's title and picture. */
+  async function subscribePodcast(env: Env, id: string, request: Request): Promise<ListPodcastSubscriptionsResponse> {
+    const body = await readJson<Podcast>(request)
+    const err = validatePodcast(body)
+    if (err) fail(400, err)
+    const count = await env.DB.prepare('SELECT COUNT(*) AS n FROM podcast_subscriptions WHERE id != ?')
+      .bind(id)
+      .first<{ n: number }>()
+    if ((count?.n ?? 0) >= MAX_PODCAST_SUBSCRIPTIONS) fail(400, 'Demasiadas suscripciones')
+    await env.DB.prepare(
+      `INSERT INTO podcast_subscriptions (id, title, author, image, subscribed_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET title = excluded.title, author = excluded.author, image = excluded.image`
+    )
+      .bind(id, body.title.trim(), body.author, body.image ?? null, Date.now())
+      .run()
+    return listPodcastSubs(env)
+  }
+
+  async function unsubscribePodcast(env: Env, id: string): Promise<ListPodcastSubscriptionsResponse> {
+    await env.DB.prepare('DELETE FROM podcast_subscriptions WHERE id = ?').bind(id).run()
+    return listPodcastSubs(env)
+  }
+
   async function route(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
     if (!url.pathname.startsWith(API_PREFIX + '/')) fail(404, 'Not found')
@@ -523,6 +603,22 @@ export function createApp(presign: Presigner, opts: AppOptions = {}): App {
     if (path === '/recommendations' && method === 'PUT') return json(await putRecommendations(env, request))
     if (path === '/requests' && method === 'GET') return json(await listRequests(env))
     if (path === '/requests' && method === 'POST') return json(await addRequest(env, request))
+
+    if (path === '/podcasts/search' && method === 'GET') return json(await searchPodcastsRoute(env, url))
+    if (path === '/podcasts/subscriptions' && method === 'GET') return json(await listPodcastSubs(env))
+    const ps = /^\/podcasts\/subscriptions\/([^/]+)$/.exec(path)
+    if (ps) {
+      if (!PODCAST_ID_RE.test(ps[1])) fail(400, 'Invalid podcast id')
+      if (method === 'PUT') return json(await subscribePodcast(env, ps[1], request))
+      if (method === 'DELETE') return json(await unsubscribePodcast(env, ps[1]))
+      return fail(405, 'Method not allowed')
+    }
+    const pe = /^\/podcasts\/([^/]+)\/episodes$/.exec(path)
+    if (pe) {
+      if (!PODCAST_ID_RE.test(pe[1])) fail(400, 'Invalid podcast id')
+      if (method === 'GET') return json(await episodesRoute(env, pe[1]))
+      return fail(405, 'Method not allowed')
+    }
 
     if (path === '/velody' && method === 'GET') return json(await listVelodySends(env))
     const vs = /^\/velody\/([^/]+)$/.exec(path)

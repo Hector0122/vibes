@@ -5,6 +5,7 @@
 //   vibes/downloads.json   { id: sha256 } of each downloaded copy
 //   vibes/library.json     the last song list + playlists seen in the cloud
 //   vibes/books.json       where each audiobook was left
+//   vibes/podcasts.json    where each podcast episode was left
 import { Directory, File, Paths } from 'expo-file-system'
 import type { CloudPlaylist, CloudSong } from '../../src/shared/api'
 
@@ -142,4 +143,23 @@ export async function loadBookPositions(): Promise<BookPositions> {
 
 export async function saveBookPosition(book: string, id: string, time: number): Promise<void> {
   await writeJson(booksFile(), { ...(await loadBookPositions()), [book]: { id, time } })
+}
+
+/** Where each podcast episode was left: episode id → second, its length, and when. */
+export type EpisodePositions = Record<string, { time: number; duration: number; at: number }>
+
+const episodesFile = (): File => new File(root(), 'podcasts.json')
+/** Only the most recent ones are kept, so the file stays small. */
+const MAX_EPISODE_POSITIONS = 500
+
+export async function loadEpisodePositions(): Promise<EpisodePositions> {
+  return (await readJson<EpisodePositions>(episodesFile())) ?? {}
+}
+
+export async function saveEpisodePosition(id: string, time: number, duration: number, at: number): Promise<void> {
+  const all = { ...(await loadEpisodePositions()), [id]: { time, duration, at } }
+  const kept = Object.entries(all)
+    .sort((a, b) => b[1].at - a[1].at)
+    .slice(0, MAX_EPISODE_POSITIONS)
+  await writeJson(episodesFile(), Object.fromEntries(kept))
 }

@@ -18,6 +18,7 @@ import {
 import type { CloudSong } from '../../src/shared/api'
 import { isListened, pickNext, pickPrev, remember } from '../../src/shared/queue'
 import { chaptersOf } from './books'
+import { isEpisode, type EpisodeSong } from './podcasts'
 import type { Cloud } from './cloud'
 import * as store from './offline'
 import { recordPlay, setPlaysCloud } from './plays'
@@ -137,6 +138,8 @@ export class Engine {
   }
 
   private async source(song: CloudSong): Promise<{ uri: string; streamed: boolean }> {
+    // A podcast episode streams from the show's own server (a plain, lasting URL).
+    if (isEpisode(song)) return { uri: song.episodeUrl, streamed: false }
     const local = store.localUri(song.id)
     if (local) return { uri: local, streamed: false }
     if (!this.cloud) throw new Error('Sin conexión: esta canción no está descargada')
@@ -324,6 +327,8 @@ export class Engine {
     // The list ran out: nothing got queued after this song (its link failed, say). Pick one now.
     // duration > 0 leaves out the "ended" that clearing the list for a new song also reports.
     if (s.didJustFinish && s.duration > 0) {
+      // Heard to the end: next time it starts over (and shows as heard).
+      if (isEpisode(cur)) void store.saveEpisodePosition(cur.id, s.duration, s.duration, this.now()).catch(() => {})
       if (this.state.sleep && 'endOfSong' in this.state.sleep) this.set({ sleep: null })
       else this.next()
     }
@@ -354,6 +359,12 @@ export class Engine {
     if (!song) return
     this.chapters = chapters
     await this.start(song, from)
+  }
+
+  /** Plays a podcast episode on its own (it stops at its end), from `from` seconds. */
+  async playEpisode(episode: EpisodeSong, from = 0): Promise<void> {
+    this.chapters = [episode]
+    await this.start(episode, from)
   }
 
   private async start(song: CloudSong, from = 0): Promise<void> {
@@ -518,7 +529,9 @@ export class Engine {
         savedAt: t
       })
       .catch(() => {})
-    if (cur.book) void store.saveBookPosition(cur.book, cur.id, this.state.time).catch(() => {})
+    if (isEpisode(cur)) {
+      void store.saveEpisodePosition(cur.id, this.state.time, this.state.duration, t).catch(() => {})
+    } else if (cur.book) void store.saveBookPosition(cur.book, cur.id, this.state.time).catch(() => {})
   }
 
   /**
@@ -535,7 +548,8 @@ export class Engine {
     const queue = s.queueIds.map((id) => byId.get(id)).filter((x): x is CloudSong => !!x)
     if (this.queue.length === 0) this.queue = queue.length ? queue : songs
     const current = byId.get(s.current.id) ?? s.current
-    if (current.book) this.chapters = chaptersOf(songs, current.book)
+    if (isEpisode(current)) this.chapters = [current]
+    else if (current.book) this.chapters = chaptersOf(songs, current.book)
     this.needsLoad = true
     this.resumeAt = s.time
     this.set({

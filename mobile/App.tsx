@@ -38,6 +38,7 @@ import {
 } from './src/screens/LibraryScreen'
 import { NowPlayingScreen } from './src/screens/NowPlayingScreen'
 import { BookSearchScreen } from './src/screens/BookSearchScreen'
+import { PodcastsScreen } from './src/screens/PodcastsScreen'
 import { SearchScreen } from './src/screens/SearchScreen'
 import { SettingsScreen } from './src/screens/SettingsScreen'
 import { loadSettings, saveSettings, type CloudSettings } from './src/settings'
@@ -576,6 +577,13 @@ export default function App(): React.JSX.Element {
           }}
           onRequested={(r) => setRequests((list) => [...list.filter((x) => x.id !== r.id), r])}
           onPreviewStart={player.pause}
+        />
+      ) : tab === 'podcasts' && cloud && !offline ? (
+        <PodcastsScreen
+          cloud={cloud}
+          currentId={player.current?.id ?? null}
+          playing={player.playing}
+          onPlay={(ep, from) => void player.playEpisode(ep, from)}
         />
       ) : tab === 'home' ? (
         <HomeScreen

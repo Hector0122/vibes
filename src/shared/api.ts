@@ -358,3 +358,56 @@ export interface VelodySend {
 export interface ListVelodySendsResponse {
   sends: VelodySend[]
 }
+
+// Podcasts: found through Podcast Index (podcastindex.org, free; the Worker keeps its key),
+// subscribed in the cloud, and streamed straight from each show's own server: the audio
+// never passes through R2. Ids are Podcast Index feed / episode ids.
+
+export const PODCAST_ID_RE = /^\d{1,15}$/
+export const MAX_PODCAST_SUBSCRIPTIONS = 500
+/** Episodes listed per show, newest first. */
+export const MAX_PODCAST_EPISODES = 100
+
+export interface Podcast {
+  id: string
+  title: string
+  author: string
+  image: string | null
+}
+
+export interface PodcastEpisode {
+  id: string
+  podcastId: string
+  title: string
+  /** The MP3 (or m4a) on the show's server. */
+  url: string
+  durationSec: number | null
+  /** When it came out (ms), if known. */
+  publishedAt: number | null
+  image: string | null
+  /** Plain text, cut short. */
+  description: string
+}
+
+export interface PodcastSearchResponse {
+  results: (Podcast & { subscribed: boolean })[]
+}
+
+export interface PodcastEpisodesResponse {
+  episodes: PodcastEpisode[]
+}
+
+export interface ListPodcastSubscriptionsResponse {
+  /** Most recently subscribed first. */
+  podcasts: (Podcast & { subscribedAt: number })[]
+}
+
+/** Returns an error message, or null when the show can be subscribed to. */
+export function validatePodcast(p: unknown): string | null {
+  if (!p || typeof p !== 'object') return 'Invalid podcast'
+  const x = p as Record<string, unknown>
+  if (typeof x.title !== 'string' || !x.title.trim() || x.title.length > 300) return 'Invalid title'
+  if (typeof x.author !== 'string' || x.author.length > 300) return 'Invalid author'
+  if (x.image != null && (typeof x.image !== 'string' || x.image.length > 1000)) return 'Invalid image'
+  return null
+}

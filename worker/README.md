@@ -15,5 +15,14 @@ Configuración: ver el [README principal](../README.md#tu-nube-una-sola-vez).
 | GET | `/v1/velody` | Canciones mandadas a Velody (la app de práctica), en orden |
 | PUT | `/v1/velody/{id}` | Manda una canción a Velody (tiene que estar completa en la nube; no audiolibros) |
 | DELETE | `/v1/velody/{id}` | La quita de esa lista (Velody, al terminar de importarla, o el usuario) |
+| GET | `/v1/podcasts/search?q=` | Busca podcasts en Podcast Index (marca a los que ya estás suscrito) |
+| GET | `/v1/podcasts/{id}/episodes` | Los últimos 100 episodios de un podcast, del más nuevo al más viejo |
+| GET | `/v1/podcasts/subscriptions` | Tus podcasts suscritos |
+| PUT | `/v1/podcasts/subscriptions/{id}` | Suscribirse (cuerpo: `title`, `author`, `image`) |
+| DELETE | `/v1/podcasts/subscriptions/{id}` | Quitar la suscripción |
+
+Los podcasts necesitan los secretos `PODCASTINDEX_KEY` y `PODCASTINDEX_SECRET` (cuenta gratis en
+api.podcastindex.org); sin ellos, buscar responde 503 con el aviso. El audio de los episodios no pasa por
+el Worker: el celular lo toca directo del servidor de cada podcast.
 
 `pnpm test` corre la API con el SQL real de `migrations/` sobre SQLite y un R2 en memoria.
