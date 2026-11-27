@@ -1,6 +1,6 @@
 {
   "name": "vibes",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "description": "Tu música sin anuncios: importa eSound, descarga con yt-dlp y guarda tu biblioteca en tu propio Cloudflare",
   "main": "./out/main/index.js",
   "author": "Hector Paramo",
