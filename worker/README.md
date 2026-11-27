@@ -15,14 +15,12 @@ Configuración: ver el [README principal](../README.md#tu-nube-una-sola-vez).
 | GET | `/v1/velody` | Canciones mandadas a Velody (la app de práctica), en orden |
 | PUT | `/v1/velody/{id}` | Manda una canción a Velody (tiene que estar completa en la nube; no audiolibros) |
 | DELETE | `/v1/velody/{id}` | La quita de esa lista (Velody, al terminar de importarla, o el usuario) |
-| GET | `/v1/podcasts/search?q=` | Busca podcasts en el directorio de Apple (marca a los que ya estás suscrito) |
-| GET | `/v1/podcasts/{id}/episodes` | Los últimos 100 episodios de un podcast, del más nuevo al más viejo |
 | GET | `/v1/podcasts/subscriptions` | Tus podcasts suscritos |
 | PUT | `/v1/podcasts/subscriptions/{id}` | Suscribirse (cuerpo: `title`, `author`, `image`) |
 | DELETE | `/v1/podcasts/subscriptions/{id}` | Quitar la suscripción |
 
-Los podcasts se buscan en el directorio de Apple Podcasts (API de búsqueda de iTunes): gratis y sin
-cuenta ni secretos. El audio de los episodios no pasa por
-el Worker: el celular lo toca directo del servidor de cada podcast.
+El Worker solo guarda tus suscripciones a podcasts. La búsqueda y los episodios los pide el celular
+directo al directorio de Apple Podcasts (gratis, sin cuenta): Apple rechaza las llamadas que salen de
+Cloudflare. El audio tampoco pasa por el Worker: suena directo del servidor de cada podcast.
 
 `pnpm test` corre la API con el SQL real de `migrations/` sobre SQLite y un R2 en memoria.

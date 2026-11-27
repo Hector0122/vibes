@@ -19,10 +19,10 @@ const META = {
 }
 
 /** A Worker with one complete song and one still uploading. */
-async function worker(outside?: typeof fetch): Promise<typeof fetch> {
+async function worker(): Promise<typeof fetch> {
   const r2 = new FakeR2()
   const env: Env = { BUCKET: r2 as unknown as R2Bucket, DB: createFakeD1(), R2_BUCKET_NAME: 'vibes', API_TOKEN: TOKEN }
-  const app = createApp(fakePresign, { fetch: outside })
+  const app = createApp(fakePresign)
   const f = ((input: RequestInfo | URL, init?: RequestInit) => app.fetch(new Request(input, init), env)) as typeof fetch
   const call = (path: string, method = 'POST', body?: unknown): Promise<Response> =>
     f(`https://w.test/v1${path}`, {
@@ -88,16 +88,23 @@ describe('mobile cloud client', () => {
     )
   })
 
-  it('podcasts: search (Apple, no key) marks what you follow; subscribe, list, unsubscribe', async () => {
-    const apple = (async () =>
-      Response.json({
+  it('podcasts: the phone searches Apple itself and marks what you follow; subscribe, list, unsubscribe in the cloud', async () => {
+    const w = await worker()
+    const toApple: string[] = []
+    const phone = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (!String(input).startsWith('https://itunes.apple.com/')) return w(input, init)
+      toApple.push(String(input))
+      expect(new Headers(init?.headers).get('authorization')).toBeNull() // the token stays with your cloud
+      return Response.json({
         results: [{ kind: 'podcast', collectionId: 920666, collectionName: 'Leyendas Legendarias', artistName: 'Leyendas' }]
-      })) as unknown as typeof fetch
-    const cloud = createCloud({ url: 'https://w.test', token: TOKEN, fetch: await worker(apple) })
+      })
+    }) as typeof fetch
+    const cloud = createCloud({ url: 'https://w.test', token: TOKEN, fetch: phone })
     expect(await cloud.listPodcastSubscriptions()).toEqual([])
     const show = { id: '920666', title: 'Leyendas Legendarias', author: 'Leyendas', image: null }
     expect((await cloud.subscribePodcast(show)).map((p) => p.id)).toEqual(['920666'])
     expect(await cloud.searchPodcasts('leyendas')).toEqual([{ ...show, subscribed: true }])
+    expect(toApple).toHaveLength(1)
     expect(await cloud.unsubscribePodcast('920666')).toEqual([])
   })
 

@@ -7,7 +7,6 @@ import {
   type ListPodcastSubscriptionsResponse,
   type Podcast,
   type PodcastEpisode,
-  type PodcastEpisodesResponse,
   type PodcastSearchResponse,
   API_PREFIX,
   type CloudPlaylist,
@@ -25,6 +24,7 @@ import {
   type UploadBeginRequest,
   type UploadBeginResponse
 } from '../../src/shared/api'
+import * as apple from '../../src/shared/podcasts'
 
 export class CloudError extends Error {
   constructor(
@@ -64,7 +64,7 @@ export interface Cloud {
   sendToVelody(id: string): Promise<void>
   /** Stores an image (a book's cover); returns its URL, which loads without the token. */
   uploadCover(bytes: Uint8Array, type: string): Promise<string>
-  /** Podcasts (Apple's directory, through the Worker). */
+  /** Podcasts: searched in Apple's directory straight from the phone; subscriptions in the cloud. */
   searchPodcasts(query: string): Promise<PodcastSearchResponse['results']>
   podcastEpisodes(id: string): Promise<PodcastEpisode[]>
   listPodcastSubscriptions(): Promise<ListPodcastSubscriptionsResponse['podcasts']>
@@ -115,6 +115,16 @@ export function createCloud(opts: {
     }
     return (await res.json()) as T
   }
+
+  // An older Worker without podcasts answers 404: none yet.
+  const listPodcastSubs = (): Promise<ListPodcastSubscriptionsResponse['podcasts']> =>
+    call<ListPodcastSubscriptionsResponse>('/podcasts/subscriptions').then(
+      (r) => r.podcasts,
+      (e: unknown) => {
+        if (e instanceof CloudError && e.status === 404) return []
+        throw e
+      }
+    )
 
   return {
     health: () => call<unknown>('/health').then(() => undefined),
@@ -174,19 +184,14 @@ export function createCloud(opts: {
     sendToVelody: (id) => call<unknown>(`/velody/${encodeURIComponent(id)}`, 'PUT').then(() => undefined),
     uploadCover: (bytes, type) =>
       call<UploadCoverResponse>('/covers', 'POST', bytes, type).then((r) => r.coverUrl),
-    searchPodcasts: (q) =>
-      call<PodcastSearchResponse>(`/podcasts/search?q=${encodeURIComponent(q.trim())}`).then((r) => r.results),
-    podcastEpisodes: (id) =>
-      call<PodcastEpisodesResponse>(`/podcasts/${encodeURIComponent(id)}/episodes`).then((r) => r.episodes),
-    // An older Worker without podcasts answers 404: none yet.
-    listPodcastSubscriptions: () =>
-      call<ListPodcastSubscriptionsResponse>('/podcasts/subscriptions').then(
-        (r) => r.podcasts,
-        (e: unknown) => {
-          if (e instanceof CloudError && e.status === 404) return []
-          throw e
-        }
-      ),
+    // Straight to Apple: it turns away requests from Cloudflare (the Worker).
+    searchPodcasts: async (q) => {
+      const [hits, subs] = await Promise.all([apple.searchPodcasts(q.trim(), doFetch), listPodcastSubs()])
+      const followed = new Set(subs.map((p) => p.id))
+      return hits.map((p) => ({ ...p, subscribed: followed.has(p.id) }))
+    },
+    podcastEpisodes: (id) => apple.podcastEpisodes(id, doFetch),
+    listPodcastSubscriptions: listPodcastSubs,
     subscribePodcast: (p) =>
       call<ListPodcastSubscriptionsResponse>(`/podcasts/subscriptions/${encodeURIComponent(p.id)}`, 'PUT', {
         title: p.title,

@@ -66,6 +66,8 @@ let UPLOADED: CloudSong[] = []
 let DELETED: string[] = []
 let SENT_TO_VELODY: string[] = []
 let COVERS: { type: string | null; bytes: number }[] = []
+let PODCAST_SUBS: { id: string; title: string; author: string; image: string | null; subscribedAt: number }[] = []
+const APPLE: string[] = []
 function fakeWorker(): void {
   globalThis.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
@@ -100,6 +102,25 @@ function fakeWorker(): void {
           { name: 'platero.jpg', format: 'JPEG' }
         ]
       }) } as Response
+    }
+    // Apple's podcast directory: the phone asks it directly (it turns the Worker away).
+    if (url.startsWith('https://itunes.apple.com/')) {
+      APPLE.push(url)
+      const results = url.includes('/search?')
+        ? [{ kind: 'podcast', collectionId: 1795502264, collectionName: 'Historias De Terror', artistName: 'Historias De Terror' }]
+        : [
+            { kind: 'podcast', collectionId: 1795502264, collectionName: 'Historias De Terror' },
+            {
+              wrapperType: 'podcastEpisode',
+              trackId: 501,
+              collectionId: 1795502264,
+              trackName: 'La casa del panteón',
+              episodeUrl: 'https://cdn.test/panteon.mp3',
+              trackTimeMillis: 1_800_000,
+              releaseDate: '2026-11-25T05:00:00Z'
+            }
+          ]
+      return { ok: true, status: 200, json: async () => ({ results }) } as Response
     }
     if (url.startsWith('https://api.github.com/'))
       return { ok: false, status: 404, json: async () => ({}) } as Response
@@ -151,6 +172,17 @@ function fakeWorker(): void {
       return json({ playlists: PLAYLISTS })
     }
     if (url.endsWith('/v1/playlists')) return json({ playlists: PLAYLISTS })
+    if (url.endsWith('/v1/podcasts/subscriptions')) return json({ podcasts: PODCAST_SUBS })
+    const sub = /\/v1\/podcasts\/subscriptions\/(\d+)$/.exec(url)
+    if (sub && init?.method === 'PUT') {
+      const b = JSON.parse(String(init.body))
+      PODCAST_SUBS = [{ id: sub[1], ...b, subscribedAt: 1 }, ...PODCAST_SUBS.filter((p) => p.id !== sub[1])]
+      return json({ podcasts: PODCAST_SUBS })
+    }
+    if (sub && init?.method === 'DELETE') {
+      PODCAST_SUBS = PODCAST_SUBS.filter((p) => p.id !== sub[1])
+      return json({ podcasts: PODCAST_SUBS })
+    }
     if (url.includes('/v1/search?q=')) {
       const hit = (id: string, title: string, previewUrl: string | null) => ({
         id,
@@ -223,6 +255,8 @@ beforeEach(() => {
   DELETED = []
   SENT_TO_VELODY = []
   COVERS = []
+  PODCAST_SUBS = []
+  APPLE.length = 0
   OPS = []
   online = true
   fakeWorker()
@@ -581,6 +615,26 @@ describe('with the cloud set up', () => {
     expect(await screen.findByTestId('podcast-search')).toBeTruthy()
     await fireEvent.press(screen.getByLabelText('Volver'))
     expect(await screen.findByText('0 podcasts suscritos')).toBeTruthy()
+  })
+
+  it('Podcasts: search Apple from the phone, subscribe (kept in the cloud), open the show and play an episode', async () => {
+    await render(<App />)
+    await fireEvent.press(await screen.findByLabelText('Podcasts'))
+    await fireEvent.press(await screen.findByLabelText('Agregar podcast'))
+    await fireEvent.changeText(screen.getByTestId('podcast-search'), 'terror')
+    await fireEvent(screen.getByTestId('podcast-search'), 'submitEditing')
+    await fireEvent.press(await screen.findByLabelText('Suscribirse a Historias De Terror'))
+
+    // Searched straight at Apple, never through the Worker; the subscription went to the cloud.
+    expect(APPLE[0]).toContain('https://itunes.apple.com/search?')
+    expect(requests.some((u) => u.includes('/v1/podcasts/search'))).toBe(false)
+    await waitFor(() => expect(PODCAST_SUBS.map((p) => p.title)).toEqual(['Historias De Terror']))
+    expect(await screen.findByLabelText('Quitar suscripción a Historias De Terror')).toBeTruthy()
+
+    await fireEvent.press(screen.getByLabelText('Podcast: Historias De Terror'))
+    await fireEvent.press(await screen.findByLabelText('Episodio: La casa del panteón'))
+    await waitFor(() => expect(nowPlaying()).toBe('La casa del panteón'))
+    expect(audio.mockPlaylist.played.at(-1)).toBe('https://cdn.test/panteon.mp3')
   })
 
   it('Inicio: tap an artist and only their songs show; Biblioteca sorts A–Z with letters', async () => {

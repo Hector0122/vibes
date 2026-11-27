@@ -24,8 +24,6 @@ import {
   MAX_PODCAST_SUBSCRIPTIONS,
   type ListPodcastSubscriptionsResponse,
   type Podcast,
-  type PodcastEpisodesResponse,
-  type PodcastSearchResponse,
   type ApiError,
   type CloudPlaylist,
   type ListPlaylistOpsResponse,
@@ -56,7 +54,6 @@ import { isAuthorized } from './auth'
 import type { Env } from './env'
 import type { Presigner } from './presign'
 import { DeezerError, searchDeezer } from './deezer'
-import { podcastEpisodes, PodcastError, searchPodcasts } from './podcasts'
 
 interface RequestRow {
   id: string
@@ -144,7 +141,7 @@ export interface App {
 }
 
 export interface AppOptions {
-  /** For calls to Deezer and Apple Podcasts (tests pass a fake). */
+  /** For calls to Deezer (tests pass a fake). */
   fetch?: typeof fetch
 }
 
@@ -506,28 +503,7 @@ export function createApp(presign: Presigner, opts: AppOptions = {}): App {
     return { deleted: true }
   }
 
-  // ── Podcasts (Apple's directory; the audio streams from each show's server) ──
-
-  async function fromDirectory<T>(work: () => Promise<T>): Promise<T> {
-    try {
-      return await work()
-    } catch (e) {
-      if (e instanceof PodcastError) fail(e.status, e.message)
-      throw e
-    }
-  }
-
-  async function searchPodcastsRoute(env: Env, url: URL): Promise<PodcastSearchResponse> {
-    const q = (url.searchParams.get('q') ?? '').trim()
-    if (!q || q.length > MAX_QUERY) fail(400, 'Escribe qué buscar')
-    const hits = await fromDirectory(() => searchPodcasts(q, opts.fetch ?? fetch))
-    const subs = new Set((await listPodcastSubs(env)).podcasts.map((p) => p.id))
-    return { results: hits.map((p) => ({ ...p, subscribed: subs.has(p.id) })) }
-  }
-
-  async function episodesRoute(id: string): Promise<PodcastEpisodesResponse> {
-    return { episodes: await fromDirectory(() => podcastEpisodes(id, opts.fetch ?? fetch)) }
-  }
+  // ── Podcast subscriptions (the phone searches Apple's directory itself) ──
 
   async function listPodcastSubs(env: Env): Promise<ListPodcastSubscriptionsResponse> {
     const { results } = await env.DB.prepare(
@@ -593,19 +569,12 @@ export function createApp(presign: Presigner, opts: AppOptions = {}): App {
     if (path === '/requests' && method === 'GET') return json(await listRequests(env))
     if (path === '/requests' && method === 'POST') return json(await addRequest(env, request))
 
-    if (path === '/podcasts/search' && method === 'GET') return json(await searchPodcastsRoute(env, url))
     if (path === '/podcasts/subscriptions' && method === 'GET') return json(await listPodcastSubs(env))
     const ps = /^\/podcasts\/subscriptions\/([^/]+)$/.exec(path)
     if (ps) {
       if (!PODCAST_ID_RE.test(ps[1])) fail(400, 'Invalid podcast id')
       if (method === 'PUT') return json(await subscribePodcast(env, ps[1], request))
       if (method === 'DELETE') return json(await unsubscribePodcast(env, ps[1]))
-      return fail(405, 'Method not allowed')
-    }
-    const pe = /^\/podcasts\/([^/]+)\/episodes$/.exec(path)
-    if (pe) {
-      if (!PODCAST_ID_RE.test(pe[1])) fail(400, 'Invalid podcast id')
-      if (method === 'GET') return json(await episodesRoute(pe[1]))
       return fail(405, 'Method not allowed')
     }
 

@@ -1,7 +1,8 @@
-// Podcast search for the phone, with Apple's podcast directory (the iTunes Search API):
-// free, no account or key. Search gives the shows; a lookup gives a show's latest
-// episodes, each with the link to its audio on the show's own server.
-import { MAX_PODCAST_EPISODES, type Podcast, type PodcastEpisode } from '../../src/shared/api'
+// Podcast search, with Apple's podcast directory (the iTunes Search API): free, no account
+// or key. Search gives the shows; a lookup gives a show's latest episodes, each with the
+// link to its audio on the show's own server. The phone calls it directly: Apple turns
+// away requests from Cloudflare's servers, so the Worker only keeps the subscriptions.
+import { MAX_PODCAST_EPISODES, type Podcast, type PodcastEpisode } from './api'
 
 const API = 'https://itunes.apple.com'
 /** Mexico's store: Spanish-language shows come first. */
